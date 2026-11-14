@@ -1,92 +1,12 @@
 // Código compartilhado pelas telas.
 // ATENÇÃO: arquivos do renderer rodam como scripts no navegador: NÃO podem ter import/export.
-
-type Perfil = 'ADMIN' | 'ATENDENTE';
-type Categoria = 'RACAO' | 'BRINQUEDO' | 'ACESSORIO' | 'HIGIENE' | 'SAUDE' | 'OUTROS';
-type TipoMov = 'ENTRADA' | 'SAIDA' | 'AJUSTE_POSITIVO' | 'AJUSTE_NEGATIVO' | 'ESTORNO';
-
-interface UsuarioDTO {
-  id: number;
-  nome: string;
-  email: string;
-  perfil: Perfil;
-  ativo: boolean;
-  criadoEm: string;
-}
-
-interface ProdutoDTO {
-  id: number;
-  nome: string;
-  descricao: string | null;
-  categoria: Categoria;
-  marca: string;
-  precoCusto: number;
-  precoVenda: number;
-  isImportado: boolean;
-  estoqueAtual: number;
-  estoqueMinimo: number;
-  estoqueBaixo: boolean;
-  ativo: boolean;
-  criadoEm: string;
-}
-
-interface DadosProdutoDTO {
-  nome: string;
-  descricao: string;
-  categoria: Categoria;
-  marca: string;
-  precoCusto: number;
-  precoVenda: number;
-  isImportado: boolean;
-  estoqueMinimo: number;
-}
-
-interface FiltroProdutoDTO {
-  busca?: string;
-  categoria?: Categoria;
-  status: 'ATIVOS' | 'INATIVOS' | 'TODOS';
-  somenteEstoqueBaixo: boolean;
-}
-
-interface MovimentacaoDTO {
-  id: number;
-  produtoId: number;
-  produtoNome: string;
-  pedidoId: number | null;
-  usuarioId: number | null;
-  usuarioNome: string | null;
-  tipo: TipoMov;
-  quantidade: number;
-  dataMovimentacao: string;
-  observacao: string | null;
-}
+// Os tipos (DTOs) e os métodos da ponte de cada módulo ficam em <modulo>/<modulo>.dto.ts.
 
 type RespostaIpc<T> = { ok: true; dados: T } | { ok: false; erro: string };
 
+/** Ponte exposta pelo preload (window.api). Cada módulo acrescenta seus métodos no próprio .dto.ts. */
 interface PontePreload {
   statusBanco(): Promise<{ ok: boolean; erro: string | null }>;
-  login(d: { email: string; senha: string }): Promise<RespostaIpc<UsuarioDTO>>;
-  logout(): Promise<RespostaIpc<void>>;
-  sessao(): Promise<RespostaIpc<UsuarioDTO | null>>;
-
-  listarUsuarios(): Promise<RespostaIpc<UsuarioDTO[]>>;
-  criarUsuario(d: { nome: string; email: string; senha: string; perfil: Perfil }): Promise<RespostaIpc<UsuarioDTO>>;
-  atualizarUsuario(id: number, d: { nome: string; email: string; perfil: Perfil }): Promise<RespostaIpc<UsuarioDTO>>;
-  redefinirSenha(id: number, d: { novaSenha: string }): Promise<RespostaIpc<void>>;
-  alterarMinhaSenha(d: { senhaAtual: string; novaSenha: string }): Promise<RespostaIpc<void>>;
-  inativarUsuario(id: number): Promise<RespostaIpc<void>>;
-  reativarUsuario(id: number): Promise<RespostaIpc<void>>;
-  excluirUsuario(id: number): Promise<RespostaIpc<void>>;
-
-  listarProdutos(f: FiltroProdutoDTO): Promise<RespostaIpc<ProdutoDTO[]>>;
-  criarProduto(d: DadosProdutoDTO & { estoqueAtual: number }): Promise<RespostaIpc<ProdutoDTO>>;
-  atualizarProduto(id: number, d: DadosProdutoDTO): Promise<RespostaIpc<ProdutoDTO>>;
-  inativarProduto(id: number): Promise<RespostaIpc<void>>;
-  reativarProduto(id: number): Promise<RespostaIpc<void>>;
-  excluirProduto(id: number): Promise<RespostaIpc<void>>;
-
-  registrarMovimentacao(d: { produtoId: number; tipo: TipoMov; quantidade: number; observacao: string }): Promise<RespostaIpc<ProdutoDTO>>;
-  listarMovimentacoes(f: { produtoId?: number; limite?: number }): Promise<RespostaIpc<MovimentacaoDTO[]>>;
 }
 
 const bridge = (window as unknown as { api: PontePreload }).api;

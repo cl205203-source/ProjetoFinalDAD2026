@@ -1,9 +1,9 @@
 // Ponte segura entre renderer e main.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Resultado } from './controllers';
-import type {
-  CategoriaProduto, MovimentacaoPublica, PerfilUsuario, ProdutoPublico, TipoMovimentacao, UsuarioPublico,
-} from './models';
+import type { Resultado } from './compartilhado/resultado';
+import type { MovimentacaoPublica, TipoMovimentacao } from './estoque/movimentacao.model';
+import type { CategoriaProduto, ProdutoPublico } from './produtos/produto.model';
+import type { PerfilUsuario, UsuarioPublico } from './usuarios/usuario.model';
 
 const chamar = <T>(canal: string, ...args: unknown[]): Promise<Resultado<T>> => ipcRenderer.invoke(canal, ...args);
 

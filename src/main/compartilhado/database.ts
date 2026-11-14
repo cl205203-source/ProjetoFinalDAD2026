@@ -1,6 +1,9 @@
 // Conexão MySQL (pool). Credenciais vêm do .env.
 import mysql, { Pool, PoolConnection } from 'mysql2/promise';
 
+/** Permite rodar a mesma query fora (Pool) ou dentro (PoolConnection) de uma transação. */
+export type Executor = Pool | PoolConnection;
+
 export class Database {
   readonly pool: Pool = mysql.createPool({
     host: process.env.DB_HOST,

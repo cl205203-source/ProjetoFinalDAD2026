@@ -1,0 +1,67 @@
+# Organização do código por módulo
+
+Cada módulo (usuários, produtos, estoque, e os próximos: clientes, entregadores, pedidos) fica na **própria pasta**, com os mesmos arquivos. Assim cada integrante trabalha no seu módulo sem editar os arquivos dos outros.
+
+## Processo main (`src/main`)
+
+```
+src/main/
+  main.ts                 composição das camadas (injeção de dependências manual)
+  preload.ts              ponte segura (um arquivo só, veja "Arquivos compartilhados")
+  integrations.ts         APIs externas (CEP, distância, cotação, e-mail)
+  compartilhado/          usado por todos os módulos
+    database.ts           pool MySQL, transação() e o tipo Executor
+    erros.ts              AppError
+    resultado.ts          formato das respostas IPC
+    controller-base.ts    registro de canais IPC com tratamento de erro
+    validacao.ts          Validador (Zod), idSchema, textoOpcional
+  usuarios/               RF01: usuários, login e sessão
+  produtos/               RF02
+  estoque/                RF03/RF04: movimentações e motor de baixa/estorno
+```
+
+Dentro de cada módulo:
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `<modulo>.model.ts` | entidade e tipos públicos (nunca expõe dado sensível) |
+| `<modulo>.schemas.ts` | schemas Zod: toda entrada do renderer é validada aqui |
+| `<modulo>.repository.ts` | único lugar com SQL (sempre prepared statements) |
+| `<modulo>.service.ts` | regras de negócio e permissões (checadas no main) |
+| `<modulo>.controller.ts` | canais IPC que chamam o service |
+
+## Regras de dependência
+
+- Fluxo: controller → service → repository → model/schemas. Nada volta.
+- Todo módulo pode usar `compartilhado/`.
+- Quem precisa de login usa o `SessaoService` de `usuarios/`. `usuarios/` não importa nenhum outro módulo de negócio.
+- `estoque/` usa `ProdutoRepository` (`produtos/`). `produtos/` só usa o `MovimentacaoRepository` para registrar o estoque inicial.
+- Os pedidos vão usar `EstoqueService.sincronizarPedido` / `estornarPedido` dentro da transação do pedido.
+- Não importe o service de outro módulo se der para injetar pelo `main.ts`. Isso evita ciclos.
+
+## Renderer (`src/renderer`)
+
+```
+src/renderer/
+  index.html  renderer.ts       casca: login e abas
+  compartilhado/comum.ts        Dom, Aviso, Formato, Rotulos, bridge
+  <modulo>/<modulo>.dto.ts      tipos do módulo + métodos dele em PontePreload
+  <modulo>/<modulo>.tela.ts     a tela
+```
+
+Os arquivos do renderer são scripts globais (sem `import`/`export`). A interface `PontePreload` é declarada em partes, uma por módulo, e o TypeScript junta todas.
+
+## Como criar um módulo novo (ex.: clientes)
+
+1. Criar `src/main/clientes/` com model, schemas, repository, service e controller (copie o padrão de `produtos/`).
+2. `main.ts`: importar, instanciar repository e service e chamar `new ClienteController(...).registrar()`.
+3. `preload.ts`: acrescentar o bloco `// Clientes` com os métodos.
+4. Renderer: criar `src/renderer/clientes/clientes.dto.ts` e `clientes.tela.ts`.
+5. `index.html`: seção da aba e `<script src="../../dist/renderer/clientes/clientes.tela.js">` antes de `renderer.js`.
+6. `renderer.ts`: registrar a aba.
+
+## Arquivos compartilhados (onde acontecem conflitos de merge)
+
+`main.ts`, `preload.ts`, `index.html`, `renderer.ts` e `compartilhado/comum.ts` são tocados por todo módulo novo. Faça mudanças pequenas, commits pequenos e `git pull --rebase` antes de enviar.
+
+Por que `preload.ts` e o renderer não são divididos em módulos: o preload roda em `sandbox: true` e só consegue importar `electron`; o renderer roda como scripts globais por causa da CSP (`script-src 'self'`).

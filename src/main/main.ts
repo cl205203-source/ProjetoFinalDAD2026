@@ -5,12 +5,20 @@ import path from 'path';
 
 dotenv.config({ path: path.join(__dirname, '../../.env'), quiet: true });
 
-import { Database } from './database';
-import { MovimentacaoRepository, ProdutoRepository, UsuarioRepository } from './repositories';
-import {
-  AutenticacaoService, EstoqueService, HashService, ProdutoService, SessaoService, UsuarioService,
-} from './services';
-import { EstoqueController, ProdutoController, UsuarioController } from './controllers';
+import { Database } from './compartilhado/database';
+import { AutenticacaoController } from './usuarios/autenticacao.controller';
+import { AutenticacaoService } from './usuarios/autenticacao.service';
+import { HashService } from './usuarios/hash.service';
+import { SessaoService } from './usuarios/sessao.service';
+import { UsuarioController } from './usuarios/usuario.controller';
+import { UsuarioRepository } from './usuarios/usuario.repository';
+import { UsuarioService } from './usuarios/usuario.service';
+import { ProdutoController } from './produtos/produto.controller';
+import { ProdutoRepository } from './produtos/produto.repository';
+import { ProdutoService } from './produtos/produto.service';
+import { EstoqueController } from './estoque/estoque.controller';
+import { EstoqueService } from './estoque/estoque.service';
+import { MovimentacaoRepository } from './estoque/movimentacao.repository';
 
 async function iniciar() {
   const db = new Database();
@@ -44,7 +52,8 @@ async function iniciar() {
     }
   }
 
-  new UsuarioController(autenticacao, usuarios, sessao).registrar();
+  new AutenticacaoController(autenticacao, sessao).registrar();
+  new UsuarioController(usuarios).registrar();
   new ProdutoController(produtos).registrar();
   new EstoqueController(estoque).registrar();
   ipcMain.handle('db:status', () => ({ ok: erroBanco === null, erro: erroBanco }));
