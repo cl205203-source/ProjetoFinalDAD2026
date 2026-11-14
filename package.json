@@ -1,0 +1,27 @@
+{
+  "name": "petshop-delivery",
+  "version": "1.0.0",
+  "description": "Sistema de Gestão e Delivery para Pet Shop (Electron + TypeScript)",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc && electron ."
+  },
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.21.0",
+    "bcryptjs": "^2.4.3",
+    "bootstrap": "^5.3.8",
+    "dotenv": "^17.4.2",
+    "mysql2": "^3.24.4",
+    "nodemailer": "^7.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "electron": "^41.10.7",
+    "typescript": "^5.6.0"
+  }
+}
