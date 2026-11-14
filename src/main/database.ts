@@ -1,5 +1,5 @@
 // Conexão MySQL (pool). Credenciais vêm do .env.
-import mysql, { Pool } from 'mysql2/promise';
+import mysql, { Pool, PoolConnection } from 'mysql2/promise';
 
 export class Database {
   readonly pool: Pool = mysql.createPool({
@@ -14,5 +14,21 @@ export class Database {
 
   async testarConexao(): Promise<void> {
     await this.pool.query('SELECT 1');
+  }
+
+  /** Executa o trabalho numa transação: commit se terminar bem, rollback se lançar erro. */
+  async transacao<T>(trabalho: (conn: PoolConnection) => Promise<T>): Promise<T> {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const resultado = await trabalho(conn);
+      await conn.commit();
+      return resultado;
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
   }
 }
