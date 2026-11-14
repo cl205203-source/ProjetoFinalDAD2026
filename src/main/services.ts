@@ -1,7 +1,12 @@
 // Services: regras de negócio (RN01-RN04), autenticação e validação
 import bcrypt from 'bcryptjs';
-import { UsuarioRepository } from './repositories';
-import { AppError, EsquemasUsuario, PerfilUsuario, Usuario, UsuarioPublico, Validador } from './models';
+import { PoolConnection } from 'mysql2/promise';
+import { Database } from './database';
+import { MovimentacaoRepository, ProdutoRepository, UsuarioRepository } from './repositories';
+import {
+  AppError, EsquemasEstoque, EsquemasProduto, EsquemasUsuario, ItemEstoque, MovimentacaoPublica,
+  PerfilUsuario, Produto, ProdutoPublico, Usuario, UsuarioPublico, Validador,
+} from './models';
 
 /** Hash de senha (bcrypt com sal aleatório embutido). */
 export class HashService {
@@ -249,5 +254,227 @@ export class UsuarioService {
     if (alvo.ehAdmin() && alvo.ativo && (await this.usuarios.contarAdminsAtivos()) <= 1) {
       throw new AppError('O sistema precisa de ao menos um administrador ativo.');
     }
+  }
+}
+
+
+// ===================== RF02-RF04: Produtos e Estoque =====================
+export class ProdutoService {
+  constructor(
+    private readonly produtos: ProdutoRepository,
+    private readonly movimentacoes: MovimentacaoRepository,
+    private readonly sessao: SessaoService,
+    private readonly db: Database,
+  ) {}
+
+  /** Admin e Atendente consultam; o Atendente só enxerga produtos ativos. */
+  async listar(entrada: unknown): Promise<ProdutoPublico[]> {
+    const usuario = this.sessao.exigirLogado();
+    const filtro = Validador.parse(EsquemasProduto.filtro, entrada);
+    if (!usuario.ehAdmin()) filtro.status = 'ATIVOS';
+    return (await this.produtos.listar(filtro)).map((p) => p.paraPublico());
+  }
+
+  async criar(entrada: unknown): Promise<ProdutoPublico> {
+    const usuario = this.sessao.exigirPerfil('ADMIN');
+    const dados = Validador.parse(EsquemasProduto.criar, entrada);
+
+    const id = await this.db.transacao(async (conn) => {
+      const novoId = await this.produtos.criar(dados, dados.estoqueAtual, conn);
+      if (dados.estoqueAtual > 0) {
+        await this.movimentacoes.registrar(
+          {
+            produtoId: novoId,
+            pedidoId: null,
+            usuarioId: usuario.id,
+            tipo: 'ENTRADA',
+            quantidade: dados.estoqueAtual,
+            observacao: 'Estoque inicial (cadastro do produto)',
+          },
+          conn,
+        );
+      }
+      return novoId;
+    });
+    return (await this.obterOuFalhar(id)).paraPublico();
+  }
+
+  async atualizar(idEntrada: unknown, entrada: unknown): Promise<ProdutoPublico> {
+    this.sessao.exigirPerfil('ADMIN');
+    const id = Validador.parse(EsquemasUsuario.id, idEntrada);
+    const dados = Validador.parse(EsquemasProduto.atualizar, entrada);
+    await this.obterOuFalhar(id);
+    await this.produtos.atualizar(id, dados);
+    return (await this.obterOuFalhar(id)).paraPublico();
+  }
+
+  /** Soft delete. */
+  async inativar(idEntrada: unknown): Promise<void> {
+    this.sessao.exigirPerfil('ADMIN');
+    const id = Validador.parse(EsquemasUsuario.id, idEntrada);
+    await this.obterOuFalhar(id);
+    await this.produtos.definirAtivo(id, false);
+  }
+
+  async reativar(idEntrada: unknown): Promise<void> {
+    this.sessao.exigirPerfil('ADMIN');
+    const id = Validador.parse(EsquemasUsuario.id, idEntrada);
+    await this.obterOuFalhar(id);
+    await this.produtos.definirAtivo(id, true);
+  }
+
+  /** Exclusão física só para produto sem histórico (RN04). */
+  async excluir(idEntrada: unknown): Promise<void> {
+    this.sessao.exigirPerfil('ADMIN');
+    const id = Validador.parse(EsquemasUsuario.id, idEntrada);
+    await this.obterOuFalhar(id);
+    if (await this.produtos.possuiVinculos(id)) {
+      throw new AppError('Este produto possui pedidos ou movimentações de estoque e não pode ser excluído. Use "Inativar".');
+    }
+    await this.produtos.excluir(id);
+  }
+
+  private async obterOuFalhar(id: number): Promise<Produto> {
+    const p = await this.produtos.buscarPorId(id);
+    if (!p) throw new AppError('Produto não encontrado.', 'NAO_ENCONTRADO');
+    return p;
+  }
+}
+
+export class EstoqueService {
+  constructor(
+    private readonly produtos: ProdutoRepository,
+    private readonly movimentacoes: MovimentacaoRepository,
+    private readonly sessao: SessaoService,
+    private readonly db: Database,
+  ) {}
+
+  /** RF04: entrada (Admin/Atendente) ou ajuste manual (só Admin), sempre com histórico. */
+  async registrarMovimentacao(entrada: unknown): Promise<ProdutoPublico> {
+    const usuario = this.sessao.exigirLogado();
+    const dados = Validador.parse(EsquemasEstoque.movimentacao, entrada);
+
+    if (dados.tipo !== 'ENTRADA' && !usuario.ehAdmin()) {
+      throw new AppError('Somente o Administrador pode fazer ajustes manuais de estoque.', 'SEM_PERMISSAO');
+    }
+
+    await this.db.transacao(async (conn) => {
+      const produto = await this.produtos.buscarPorId(dados.produtoId, conn);
+      if (!produto) throw new AppError('Produto não encontrado.', 'NAO_ENCONTRADO');
+      if (!produto.ativo) throw new AppError('Produto inativo. Reative-o antes de movimentar o estoque.');
+
+      const delta = dados.tipo === 'AJUSTE_NEGATIVO' ? -dados.quantidade : dados.quantidade;
+      if (!(await this.produtos.ajustarEstoque(dados.produtoId, delta, conn))) {
+        throw new AppError(
+          `Saldo insuficiente: "${produto.nome}" tem ${produto.estoqueAtual} unidade(s) e a baixa é de ${dados.quantidade}.`,
+        );
+      }
+      await this.movimentacoes.registrar(
+        {
+          produtoId: dados.produtoId,
+          pedidoId: null,
+          usuarioId: usuario.id,
+          tipo: dados.tipo,
+          quantidade: dados.quantidade,
+          observacao: dados.observacao,
+        },
+        conn,
+      );
+    });
+
+    const atualizado = await this.produtos.buscarPorId(dados.produtoId);
+    return atualizado!.paraPublico();
+  }
+
+  async listarHistorico(entrada: unknown): Promise<MovimentacaoPublica[]> {
+    this.sessao.exigirLogado();
+    const filtro = Validador.parse(EsquemasEstoque.historico, entrada);
+    return (await this.movimentacoes.listar(filtro.produtoId ?? null, filtro.limite)).map((m) => m.paraPublico());
+  }
+
+  /**
+   * RF03/RN01: valida se há saldo para os itens (só leitura, para dar feedback na tela).
+   * Ao editar um pedido, informe o pedidoId: o que já foi baixado para ele conta como disponível.
+   */
+  async validarDisponibilidade(entrada: unknown): Promise<void> {
+    this.sessao.exigirLogado();
+    const { itens, pedidoId } = Validador.parse(EsquemasEstoque.disponibilidade, entrada);
+    const jaBaixado = pedidoId
+      ? await this.movimentacoes.saldoBaixadoPorPedido(pedidoId)
+      : new Map<number, number>();
+
+    const problemas: string[] = [];
+    for (const [produtoId, qtd] of EstoqueService.consolidar(itens)) {
+      const p = await this.produtos.buscarPorId(produtoId);
+      if (!p) {
+        problemas.push(`Produto #${produtoId} não encontrado.`);
+        continue;
+      }
+      if (!p.ativo) {
+        problemas.push(`"${p.nome}" está inativo.`);
+        continue;
+      }
+      const disponivel = p.estoqueAtual + (jaBaixado.get(produtoId) ?? 0);
+      if (qtd > disponivel) {
+        problemas.push(`Estoque insuficiente para "${p.nome}": disponível ${disponivel}, solicitado ${qtd}.`);
+      }
+    }
+    if (problemas.length) throw new AppError(problemas.join(' '));
+  }
+
+  /**
+   * RF03: alinha o estoque baixado ao que o pedido precisa AGORA.
+   * - Confirmar pedido:  sincronizarPedido(conn, id, itens)  -> baixa (SAIDA)
+   * - Editar pedido:     sincronizarPedido(conn, id, novosItens) -> baixa/estorna só a diferença
+   * - Cancelar pedido:   estornarPedido(conn, id)             -> devolve tudo (ESTORNO)
+   * Deve ser chamado DENTRO da transação do pedido (por isso recebe a conexão).
+   * Repetir a chamada com os mesmos dados não gera movimentações duplicadas.
+   */
+  async sincronizarPedido(conn: PoolConnection, pedidoId: number, itensEntrada: ItemEstoque[]): Promise<void> {
+    const usuario = this.sessao.exigirLogado();
+    const desejado = EstoqueService.consolidar(Validador.parse(EsquemasEstoque.itens, itensEntrada));
+    const baixado = await this.movimentacoes.saldoBaixadoPorPedido(pedidoId, conn);
+
+    // Ordem fixa de ids evita deadlock entre transações concorrentes.
+    const ids = [...new Set([...desejado.keys(), ...baixado.keys()])].sort((a, b) => a - b);
+
+    for (const produtoId of ids) {
+      const delta = (desejado.get(produtoId) ?? 0) - (baixado.get(produtoId) ?? 0);
+      if (delta === 0) continue;
+
+      const produto = await this.produtos.buscarPorId(produtoId, conn);
+      if (!produto) throw new AppError(`Produto #${produtoId} não encontrado.`, 'NAO_ENCONTRADO');
+
+      if (delta > 0) {
+        if (!produto.ativo) throw new AppError(`"${produto.nome}" está inativo e não pode ser vendido.`);
+        if (!(await this.produtos.ajustarEstoque(produtoId, -delta, conn))) {
+          throw new AppError(
+            `Estoque insuficiente para "${produto.nome}": disponível ${produto.estoqueAtual}, necessário ${delta}.`,
+          );
+        }
+        await this.movimentacoes.registrar(
+          { produtoId, pedidoId, usuarioId: usuario.id, tipo: 'SAIDA', quantidade: delta, observacao: `Baixa automática - pedido #${pedidoId}` },
+          conn,
+        );
+      } else {
+        await this.produtos.ajustarEstoque(produtoId, -delta, conn);
+        await this.movimentacoes.registrar(
+          { produtoId, pedidoId, usuarioId: usuario.id, tipo: 'ESTORNO', quantidade: -delta, observacao: `Estorno - pedido #${pedidoId}` },
+          conn,
+        );
+      }
+    }
+  }
+
+  /** Cancelamento: devolve ao estoque tudo que foi baixado para o pedido. */
+  estornarPedido(conn: PoolConnection, pedidoId: number): Promise<void> {
+    return this.sincronizarPedido(conn, pedidoId, []);
+  }
+
+  /** Soma quantidades de linhas repetidas do mesmo produto. */
+  private static consolidar(itens: ItemEstoque[]): Map<number, number> {
+    const mapa = new Map<number, number>();
+    for (const i of itens) mapa.set(i.produtoId, (mapa.get(i.produtoId) ?? 0) + i.quantidade);
+    return mapa;
   }
 }
