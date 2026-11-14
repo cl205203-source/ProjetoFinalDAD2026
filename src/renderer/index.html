@@ -42,10 +42,16 @@
       </div>
     </nav>
 
-    <main class="container py-4">
+    <ul class="nav nav-tabs bg-white px-3 pt-2">
+      <li class="nav-item"><button type="button" class="nav-link active" data-aba="produtos">Produtos</button></li>
+      <li class="nav-item"><button type="button" class="nav-link" data-aba="estoque">Estoque</button></li>
+      <li class="nav-item" id="item-aba-usuarios"><button type="button" class="nav-link" data-aba="usuarios">Usuários</button></li>
+    </ul>
+
+    <main class="container-fluid px-4 py-4">
       <div id="alerta" class="alert d-none" role="alert"></div>
 
-      <!-- Formulário único (criar / editar / redefinir senha / minha senha) -->
+      <!-- Formulário de usuário (criar / editar / redefinir senha / minha senha) -->
       <section id="painel-form" class="card card-body mb-4 d-none">
         <h5 id="form-titulo" class="mb-3"></h5>
         <form id="form-usuario" novalidate>
@@ -82,7 +88,175 @@
         </form>
       </section>
 
-      <!-- Somente ADMIN -->
+      <!-- ===== ABA PRODUTOS ===== -->
+      <section id="secao-produtos">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Produtos</h4>
+          <button id="btn-novo-produto" type="button" class="btn btn-success d-none">Novo produto</button>
+        </div>
+
+        <section id="painel-produto" class="card card-body mb-4 d-none">
+          <h5 id="produto-titulo" class="mb-3"></h5>
+          <form id="form-produto" novalidate>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="p-nome" class="form-label">Nome</label>
+                <input id="p-nome" type="text" class="form-control" maxlength="150">
+              </div>
+              <div class="col-md-3">
+                <label for="p-marca" class="form-label">Marca</label>
+                <input id="p-marca" type="text" class="form-control" maxlength="80">
+              </div>
+              <div class="col-md-3">
+                <label for="p-categoria" class="form-label">Categoria</label>
+                <select id="p-categoria" class="form-select">
+                  <option value="RACAO">Ração</option>
+                  <option value="BRINQUEDO">Brinquedo</option>
+                  <option value="ACESSORIO">Acessório</option>
+                  <option value="HIGIENE">Higiene</option>
+                  <option value="SAUDE">Saúde</option>
+                  <option value="OUTROS">Outros</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <label for="p-descricao" class="form-label">Descrição (opcional)</label>
+                <textarea id="p-descricao" class="form-control" rows="2" maxlength="2000"></textarea>
+              </div>
+              <div class="col-md-3">
+                <label for="p-custo" class="form-label">Preço de custo (R$)</label>
+                <input id="p-custo" type="text" inputmode="decimal" class="form-control" placeholder="0,00">
+              </div>
+              <div class="col-md-3">
+                <label for="p-venda" class="form-label">Preço de venda (R$)</label>
+                <input id="p-venda" type="text" inputmode="decimal" class="form-control" placeholder="0,00">
+              </div>
+              <div class="col-md-2">
+                <label for="p-origem" class="form-label">Origem</label>
+                <select id="p-origem" class="form-select">
+                  <option value="NACIONAL">Nacional</option>
+                  <option value="IMPORTADO">Importado</option>
+                </select>
+              </div>
+              <div class="col-md-2" id="grupo-estoque-inicial">
+                <label for="p-estoque" class="form-label">Estoque inicial</label>
+                <input id="p-estoque" type="text" inputmode="numeric" class="form-control" value="0">
+              </div>
+              <div class="col-md-2">
+                <label for="p-minimo" class="form-label">Estoque mínimo</label>
+                <input id="p-minimo" type="text" inputmode="numeric" class="form-control" value="0">
+              </div>
+            </div>
+            <div id="dica-estoque" class="form-text mt-2 d-none">
+              O saldo em estoque não é editado aqui. Use a aba <strong>Estoque</strong> (entrada ou ajuste), para manter o histórico.
+            </div>
+            <div class="mt-3 d-flex gap-2">
+              <button type="submit" class="btn btn-success">Salvar</button>
+              <button id="btn-cancelar-produto" type="button" class="btn btn-outline-secondary">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <form id="form-filtro-produtos" class="row g-2 align-items-end mb-3" novalidate>
+          <div class="col-md-4">
+            <label for="filtro-busca" class="form-label small mb-1">Buscar (nome ou marca)</label>
+            <input id="filtro-busca" type="text" class="form-control" maxlength="100">
+          </div>
+          <div class="col-md-2">
+            <label for="filtro-categoria" class="form-label small mb-1">Categoria</label>
+            <select id="filtro-categoria" class="form-select">
+              <option value="">Todas</option>
+              <option value="RACAO">Ração</option>
+              <option value="BRINQUEDO">Brinquedo</option>
+              <option value="ACESSORIO">Acessório</option>
+              <option value="HIGIENE">Higiene</option>
+              <option value="SAUDE">Saúde</option>
+              <option value="OUTROS">Outros</option>
+            </select>
+          </div>
+          <div class="col-md-2" id="grupo-filtro-status">
+            <label for="filtro-status" class="form-label small mb-1">Status</label>
+            <select id="filtro-status" class="form-select">
+              <option value="ATIVOS">Ativos</option>
+              <option value="INATIVOS">Inativos</option>
+              <option value="TODOS">Todos</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <div class="form-check mb-2">
+              <input id="filtro-baixo" type="checkbox" class="form-check-input">
+              <label for="filtro-baixo" class="form-check-label small">Estoque baixo</label>
+            </div>
+          </div>
+          <div class="col-md-2 d-flex gap-2">
+            <button type="submit" class="btn btn-outline-success">Filtrar</button>
+            <button id="btn-limpar-filtro" type="button" class="btn btn-outline-secondary">Limpar</button>
+          </div>
+        </form>
+
+        <div class="card table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>ID</th><th>Produto</th><th>Categoria</th><th>Origem</th>
+                <th class="text-end">Custo</th><th class="text-end">Venda</th>
+                <th class="text-center">Estoque</th><th>Status</th><th class="text-end">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-produtos"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== ABA ESTOQUE ===== -->
+      <section id="secao-estoque" class="d-none">
+        <div class="card card-body mb-4">
+          <h5 class="mb-3">Registrar movimentação</h5>
+          <form id="form-estoque" novalidate>
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label for="e-produto" class="form-label">Produto</label>
+                <select id="e-produto" class="form-select"></select>
+              </div>
+              <div class="col-md-3">
+                <label for="e-tipo" class="form-label">Tipo</label>
+                <select id="e-tipo" class="form-select">
+                  <option value="ENTRADA">Entrada (reposição)</option>
+                  <option value="AJUSTE_POSITIVO">Ajuste manual (+)</option>
+                  <option value="AJUSTE_NEGATIVO">Ajuste manual (−)</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label for="e-qtd" class="form-label">Quantidade</label>
+                <input id="e-qtd" type="text" inputmode="numeric" class="form-control">
+              </div>
+              <div class="col-md-3">
+                <label for="e-obs" class="form-label">Observação</label>
+                <input id="e-obs" type="text" class="form-control" maxlength="255" placeholder="Fornecedor ou motivo do ajuste">
+              </div>
+            </div>
+            <div class="form-text mt-2">O motivo é obrigatório nos ajustes manuais.</div>
+            <button type="submit" class="btn btn-success mt-3">Registrar</button>
+          </form>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">Histórico</h5>
+          <select id="e-filtro-produto" class="form-select w-auto"></select>
+        </div>
+        <div class="card table-responsive">
+          <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Data</th><th>Produto</th><th>Tipo</th><th class="text-end">Qtd</th>
+                <th>Pedido</th><th>Usuário</th><th>Observação</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-movimentacoes"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== ABA USUÁRIOS (somente ADMIN) ===== -->
       <section id="secao-usuarios" class="d-none">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h4 class="mb-0">Usuários</h4>
@@ -99,17 +273,14 @@
           </table>
         </div>
       </section>
-
-      <!-- ATENDENTE -->
-      <section id="secao-atendente" class="d-none">
-        <div class="alert alert-info mb-0">
-          Você está logado como <strong>Atendente</strong>. Os módulos de pedidos, clientes e produtos
-          serão liberados nas próximas etapas. A gestão de usuários é exclusiva do Administrador.
-        </div>
-      </section>
     </main>
   </div>
 
+  <!-- Ordem importa: comum primeiro, renderer (que instancia o App) por último. -->
+  <script src="../../dist/renderer/comum.js"></script>
+  <script src="../../dist/renderer/usuarios.js"></script>
+  <script src="../../dist/renderer/produtos.js"></script>
+  <script src="../../dist/renderer/estoque.js"></script>
   <script src="../../dist/renderer/renderer.js"></script>
 </body>
 </html>
