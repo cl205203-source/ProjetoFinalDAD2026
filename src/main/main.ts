@@ -6,9 +6,11 @@ import path from 'path';
 dotenv.config({ path: path.join(__dirname, '../../.env'), quiet: true });
 
 import { Database } from './database';
-import { UsuarioRepository } from './repositories';
-import { AutenticacaoService, HashService, SessaoService, UsuarioService } from './services';
-import { UsuarioController } from './controllers';
+import { MovimentacaoRepository, ProdutoRepository, UsuarioRepository } from './repositories';
+import {
+  AutenticacaoService, EstoqueService, HashService, ProdutoService, SessaoService, UsuarioService,
+} from './services';
+import { EstoqueController, ProdutoController, UsuarioController } from './controllers';
 
 async function iniciar() {
   const db = new Database();
@@ -23,9 +25,15 @@ async function iniciar() {
   // Composição das camadas (injeção de dependências manual)
   const hash = new HashService();
   const sessao = new SessaoService();
+
   const usuarioRepo = new UsuarioRepository(db.pool);
+  const produtoRepo = new ProdutoRepository(db.pool);
+  const movimentacaoRepo = new MovimentacaoRepository(db.pool);
+
   const autenticacao = new AutenticacaoService(usuarioRepo, sessao, hash);
   const usuarios = new UsuarioService(usuarioRepo, sessao, hash);
+  const produtos = new ProdutoService(produtoRepo, movimentacaoRepo, sessao, db);
+  const estoque = new EstoqueService(produtoRepo, movimentacaoRepo, sessao, db);
 
   if (erroBanco === null) {
     try {
@@ -37,10 +45,12 @@ async function iniciar() {
   }
 
   new UsuarioController(autenticacao, usuarios, sessao).registrar();
+  new ProdutoController(produtos).registrar();
+  new EstoqueController(estoque).registrar();
   ipcMain.handle('db:status', () => ({ ok: erroBanco === null, erro: erroBanco }));
 
   const janela = new BrowserWindow({
-    width: 1100, height: 750,
+    width: 1200, height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
