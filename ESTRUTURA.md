@@ -15,9 +15,13 @@ src/main/
     resultado.ts          formato das respostas IPC
     controller-base.ts    registro de canais IPC com tratamento de erro
     validacao.ts          Validador (Zod), idSchema, textoOpcional
+    campos-br.ts          CPF, telefone, CEP e UF (schemas Zod reutilizáveis)
+    mysql-erros.ts        códigos de erro do MySQL tratados pelos módulos
   usuarios/               RF01: usuários, login e sessão
   produtos/               RF02
   estoque/                RF03/RF04: movimentações e motor de baixa/estorno
+  clientes/               RF05/RF06: CRUD de clientes, consulta de CEP e distância
+  entregadores/           RF07: CRUD de entregadores e disponibilidade
 ```
 
 Dentro de cada módulo:
@@ -65,3 +69,9 @@ Os arquivos do renderer são scripts globais (sem `import`/`export`). A interfac
 `main.ts`, `preload.ts`, `index.html`, `renderer.ts` e `compartilhado/comum.ts` são tocados por todo módulo novo. Faça mudanças pequenas, commits pequenos e `git pull --rebase` antes de enviar.
 
 Por que `preload.ts` e o renderer não são divididos em módulos: o preload roda em `sandbox: true` e só consegue importar `electron`; o renderer roda como scripts globais por causa da CSP (`script-src 'self'`).
+
+## Clientes, entregadores e configuração da loja
+
+- `.env`: informe `LOJA_CEP` (ou `LOJA_LATITUDE` e `LOJA_LONGITUDE`) para o cálculo de distância (RF06).
+- `integrations.ts`: `CepApi` (ViaCEP, com BrasilAPI de reserva) e `DistanciaApi` (Nominatim/OpenStreetMap + Haversine). Falha da API de distância não impede o cadastro: a distância fica vazia e é recalculada na próxima edição.
+- Pedidos: usem `clientes.id` / `entregadores.id` em `pedidos.cliente_id` / `pedidos.entregador_id` e `clientes.distancia_km` na precificação da entrega. O SQL traz as FKs comentadas.
