@@ -1,16 +1,18 @@
 // Casca da interface: login, navegação por abas e ligação entre as telas.
 // Só conversa com o main via window.api (preload).
 
-type Aba = 'produtos' | 'estoque' | 'usuarios';
+type Aba = 'produtos' | 'estoque' | 'clientes' | 'entregadores' | 'usuarios';
 
 class App {
-  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'usuarios'];
+  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'clientes', 'entregadores', 'usuarios'];
 
   private usuarioAtual: UsuarioDTO | null = null;
 
   private readonly usuarios = new UsuariosTela((u) => this.definirUsuario(u));
   private readonly produtos = new ProdutosTela((p) => void this.movimentar(p));
   private readonly estoque = new EstoqueTela();
+  private readonly clientes = new ClientesTela();
+  private readonly entregadores = new EntregadoresTela();
 
   constructor() {
     Dom.pegar<HTMLFormElement>('form-login').addEventListener('submit', (e) => void this.aoLogar(e));
@@ -64,6 +66,8 @@ class App {
     this.usuarios.limpar();
     this.produtos.limpar();
     this.estoque.limpar();
+    this.clientes.limpar();
+    this.entregadores.limpar();
     Aviso.limpar();
     Dom.pegar('tela-app').classList.add('d-none');
     Dom.pegar('tela-login').classList.remove('d-none');
@@ -98,6 +102,8 @@ class App {
     Aviso.limpar();
     this.usuarios.fecharForm();
     this.produtos.fecharForm();
+    this.clientes.fecharForm();
+    this.entregadores.fecharForm();
 
     document.querySelectorAll<HTMLElement>('[data-aba]').forEach((b) => {
       b.classList.toggle('active', b.dataset.aba === aba);
@@ -108,6 +114,8 @@ class App {
 
     if (aba === 'produtos') await this.produtos.ativar(u);
     if (aba === 'estoque') await this.estoque.ativar(u);
+    if (aba === 'clientes') await this.clientes.ativar(u);
+    if (aba === 'entregadores') await this.entregadores.ativar(u);
     if (aba === 'usuarios' && u.perfil === 'ADMIN') await this.usuarios.ativar(u);
   }
 

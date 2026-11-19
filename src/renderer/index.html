@@ -45,6 +45,8 @@
     <ul class="nav nav-tabs bg-white px-3 pt-2">
       <li class="nav-item"><button type="button" class="nav-link active" data-aba="produtos">Produtos</button></li>
       <li class="nav-item"><button type="button" class="nav-link" data-aba="estoque">Estoque</button></li>
+      <li class="nav-item"><button type="button" class="nav-link" data-aba="clientes">Clientes</button></li>
+      <li class="nav-item"><button type="button" class="nav-link" data-aba="entregadores">Entregadores</button></li>
       <li class="nav-item" id="item-aba-usuarios"><button type="button" class="nav-link" data-aba="usuarios">Usuários</button></li>
     </ul>
 
@@ -256,6 +258,188 @@
         </div>
       </section>
 
+      <!-- ===== ABA CLIENTES ===== -->
+      <section id="secao-clientes" class="d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Clientes</h4>
+          <button id="btn-novo-cliente" type="button" class="btn btn-success">Novo cliente</button>
+        </div>
+
+        <section id="painel-cliente" class="card card-body mb-4 d-none">
+          <h5 id="cliente-titulo" class="mb-3"></h5>
+          <form id="form-cliente" novalidate>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="c-nome" class="form-label">Nome completo</label>
+                <input id="c-nome" type="text" class="form-control" maxlength="120">
+              </div>
+              <div class="col-md-3">
+                <label for="c-cpf" class="form-label">CPF</label>
+                <input id="c-cpf" type="text" inputmode="numeric" class="form-control" maxlength="14" placeholder="000.000.000-00">
+              </div>
+              <div class="col-md-3">
+                <label for="c-telefone" class="form-label">Telefone</label>
+                <input id="c-telefone" type="text" inputmode="tel" class="form-control" maxlength="15" placeholder="(00) 00000-0000">
+              </div>
+              <div class="col-md-6">
+                <label for="c-email" class="form-label">E-mail</label>
+                <input id="c-email" type="email" class="form-control" maxlength="150" autocomplete="off">
+              </div>
+              <div class="col-md-3">
+                <label for="c-cep" class="form-label">CEP</label>
+                <div class="input-group">
+                  <input id="c-cep" type="text" inputmode="numeric" class="form-control" maxlength="9" placeholder="00000-000">
+                  <button id="btn-buscar-cep" type="button" class="btn btn-outline-secondary">Buscar</button>
+                </div>
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
+                <div id="c-cep-status" class="form-text text-muted mb-2"></div>
+              </div>
+              <div class="col-md-6">
+                <label for="c-logradouro" class="form-label">Logradouro</label>
+                <input id="c-logradouro" type="text" class="form-control" maxlength="150">
+              </div>
+              <div class="col-md-2">
+                <label for="c-numero" class="form-label">Número</label>
+                <input id="c-numero" type="text" class="form-control" maxlength="10">
+              </div>
+              <div class="col-md-4">
+                <label for="c-complemento" class="form-label">Complemento (opcional)</label>
+                <input id="c-complemento" type="text" class="form-control" maxlength="100">
+              </div>
+              <div class="col-md-5">
+                <label for="c-bairro" class="form-label">Bairro</label>
+                <input id="c-bairro" type="text" class="form-control" maxlength="100">
+              </div>
+              <div class="col-md-5">
+                <label for="c-cidade" class="form-label">Cidade</label>
+                <input id="c-cidade" type="text" class="form-control" maxlength="100">
+              </div>
+              <div class="col-md-2">
+                <label for="c-uf" class="form-label">UF</label>
+                <select id="c-uf" class="form-select"></select>
+              </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+              <button type="submit" class="btn btn-success">Salvar</button>
+              <button id="btn-cancelar-cliente" type="button" class="btn btn-outline-secondary">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <form id="form-filtro-clientes" class="row g-2 align-items-end mb-3" novalidate>
+          <div class="col-md-5">
+            <label for="filtro-clientes-busca" class="form-label small mb-1">Buscar (nome, CPF, e-mail ou telefone)</label>
+            <input id="filtro-clientes-busca" type="text" class="form-control" maxlength="100">
+          </div>
+          <div class="col-md-2" id="grupo-filtro-clientes-status">
+            <label for="filtro-clientes-status" class="form-label small mb-1">Status</label>
+            <select id="filtro-clientes-status" class="form-select">
+              <option value="ATIVOS">Ativos</option>
+              <option value="INATIVOS">Inativos</option>
+              <option value="TODOS">Todos</option>
+            </select>
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-outline-success">Filtrar</button>
+            <button id="btn-limpar-filtro-clientes" type="button" class="btn btn-outline-secondary">Limpar</button>
+          </div>
+        </form>
+
+        <div class="card table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Cliente</th><th>CPF</th><th>Telefone</th><th>Endereço</th>
+                <th class="text-end">Distância</th><th>Status</th><th class="text-end">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-clientes"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== ABA ENTREGADORES ===== -->
+      <section id="secao-entregadores" class="d-none">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Entregadores</h4>
+          <button id="btn-novo-entregador" type="button" class="btn btn-success d-none">Novo entregador</button>
+        </div>
+
+        <section id="painel-entregador" class="card card-body mb-4 d-none">
+          <h5 id="entregador-titulo" class="mb-3"></h5>
+          <form id="form-entregador" novalidate>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label for="ent-nome" class="form-label">Nome</label>
+                <input id="ent-nome" type="text" class="form-control" maxlength="120">
+              </div>
+              <div class="col-md-3">
+                <label for="ent-cpf" class="form-label">CPF</label>
+                <input id="ent-cpf" type="text" inputmode="numeric" class="form-control" maxlength="14" placeholder="000.000.000-00">
+              </div>
+              <div class="col-md-3">
+                <label for="ent-telefone" class="form-label">Telefone</label>
+                <input id="ent-telefone" type="text" inputmode="tel" class="form-control" maxlength="15" placeholder="(00) 00000-0000">
+              </div>
+              <div class="col-md-4">
+                <label for="ent-veiculo" class="form-label">Veículo</label>
+                <input id="ent-veiculo" type="text" class="form-control" maxlength="60" placeholder="Ex.: Moto Honda CG 160">
+              </div>
+              <div class="col-md-3">
+                <label for="ent-placa" class="form-label">Placa (opcional)</label>
+                <input id="ent-placa" type="text" class="form-control" maxlength="7" placeholder="ABC1D23">
+              </div>
+              <div class="col-md-3">
+                <label for="ent-status" class="form-label">Disponibilidade</label>
+                <select id="ent-status" class="form-select"></select>
+              </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+              <button type="submit" class="btn btn-success">Salvar</button>
+              <button id="btn-cancelar-entregador" type="button" class="btn btn-outline-secondary">Cancelar</button>
+            </div>
+          </form>
+        </section>
+
+        <form id="form-filtro-entregadores" class="row g-2 align-items-end mb-3" novalidate>
+          <div class="col-md-4">
+            <label for="filtro-ent-busca" class="form-label small mb-1">Buscar (nome, CPF, veículo ou placa)</label>
+            <input id="filtro-ent-busca" type="text" class="form-control" maxlength="100">
+          </div>
+          <div class="col-md-2">
+            <label for="filtro-ent-disponibilidade" class="form-label small mb-1">Disponibilidade</label>
+            <select id="filtro-ent-disponibilidade" class="form-select">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div class="col-md-2" id="grupo-filtro-ent-status">
+            <label for="filtro-ent-status" class="form-label small mb-1">Status</label>
+            <select id="filtro-ent-status" class="form-select">
+              <option value="ATIVOS">Ativos</option>
+              <option value="INATIVOS">Inativos</option>
+              <option value="TODOS">Todos</option>
+            </select>
+          </div>
+          <div class="col-md-3 d-flex gap-2">
+            <button type="submit" class="btn btn-outline-success">Filtrar</button>
+            <button id="btn-limpar-filtro-entregadores" type="button" class="btn btn-outline-secondary">Limpar</button>
+          </div>
+        </form>
+
+        <div class="card table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>ID</th><th>Nome</th><th>CPF</th><th>Telefone</th><th>Veículo / Placa</th>
+                <th>Disponibilidade</th><th class="text-end">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-entregadores"></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- ===== ABA USUÁRIOS (somente ADMIN) ===== -->
       <section id="secao-usuarios" class="d-none">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -278,9 +462,12 @@
 
   <!-- Ordem importa: comum primeiro, renderer (que instancia o App) por último. -->
   <script src="../../dist/renderer/compartilhado/comum.js"></script>
+  <script src="../../dist/renderer/compartilhado/mascaras.js"></script>
   <script src="../../dist/renderer/usuarios/usuarios.tela.js"></script>
   <script src="../../dist/renderer/produtos/produtos.tela.js"></script>
   <script src="../../dist/renderer/estoque/estoque.tela.js"></script>
+  <script src="../../dist/renderer/clientes/clientes.tela.js"></script>
+  <script src="../../dist/renderer/entregadores/entregadores.tela.js"></script>
   <script src="../../dist/renderer/renderer.js"></script>
 </body>
 </html>

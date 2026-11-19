@@ -2,6 +2,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Resultado } from './compartilhado/resultado';
 import type { MovimentacaoPublica, TipoMovimentacao } from './estoque/movimentacao.model';
+import type { ClientePublico } from './clientes/cliente.model';
+import type { EnderecoConsultado } from './clientes/cliente.service';
+import type { EntregadorPublico, StatusEntregador } from './entregadores/entregador.model';
 import type { CategoriaProduto, ProdutoPublico } from './produtos/produto.model';
 import type { PerfilUsuario, UsuarioPublico } from './usuarios/usuario.model';
 
@@ -16,6 +19,29 @@ interface DadosProduto {
   precoVenda: number;
   isImportado: boolean;
   estoqueMinimo: number;
+}
+
+interface DadosCliente {
+  nome: string;
+  cpf: string;
+  telefone: string;
+  email: string;
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}
+
+interface DadosEntregador {
+  nome: string;
+  cpf: string;
+  telefone: string;
+  veiculo: string;
+  placa: string;
+  status: StatusEntregador;
 }
 
 contextBridge.exposeInMainWorld('api', {
@@ -54,4 +80,24 @@ contextBridge.exposeInMainWorld('api', {
     chamar<MovimentacaoPublica[]>('estoque:historico', f),
   validarDisponibilidade: (d: { itens: { produtoId: number; quantidade: number }[]; pedidoId?: number }) =>
     chamar<void>('estoque:validarDisponibilidade', d),
+
+  // Clientes
+  listarClientes: (f: { busca?: string; status: 'ATIVOS' | 'INATIVOS' | 'TODOS' }) => chamar<ClientePublico[]>('clientes:listar', f),
+  consultarCep: (cep: string) => chamar<EnderecoConsultado>('clientes:consultarCep', cep),
+  criarCliente: (d: DadosCliente) => chamar<ClientePublico>('clientes:criar', d),
+  atualizarCliente: (id: number, d: DadosCliente) => chamar<ClientePublico>('clientes:atualizar', id, d),
+  inativarCliente: (id: number) => chamar<void>('clientes:inativar', id),
+  reativarCliente: (id: number) => chamar<void>('clientes:reativar', id),
+  excluirCliente: (id: number) => chamar<void>('clientes:excluir', id),
+
+  // Entregadores
+  listarEntregadores: (f: { busca?: string; disponibilidade?: StatusEntregador; status: 'ATIVOS' | 'INATIVOS' | 'TODOS' }) =>
+    chamar<EntregadorPublico[]>('entregadores:listar', f),
+  criarEntregador: (d: DadosEntregador) => chamar<EntregadorPublico>('entregadores:criar', d),
+  atualizarEntregador: (id: number, d: DadosEntregador) => chamar<EntregadorPublico>('entregadores:atualizar', id, d),
+  alterarStatusEntregador: (id: number, d: { status: StatusEntregador }) =>
+    chamar<EntregadorPublico>('entregadores:alterarStatus', id, d),
+  inativarEntregador: (id: number) => chamar<void>('entregadores:inativar', id),
+  reativarEntregador: (id: number) => chamar<void>('entregadores:reativar', id),
+  excluirEntregador: (id: number) => chamar<void>('entregadores:excluir', id),
 });
