@@ -19,6 +19,13 @@ import { ProdutoService } from './produtos/produto.service';
 import { EstoqueController } from './estoque/estoque.controller';
 import { EstoqueService } from './estoque/estoque.service';
 import { MovimentacaoRepository } from './estoque/movimentacao.repository';
+import { ClienteController } from './clientes/cliente.controller';
+import { ClienteRepository } from './clientes/cliente.repository';
+import { ClienteService } from './clientes/cliente.service';
+import { EntregadorController } from './entregadores/entregador.controller';
+import { EntregadorRepository } from './entregadores/entregador.repository';
+import { EntregadorService } from './entregadores/entregador.service';
+import { CepApi, DistanciaApi } from './integrations';
 
 async function iniciar() {
   const db = new Database();
@@ -37,11 +44,17 @@ async function iniciar() {
   const usuarioRepo = new UsuarioRepository(db.pool);
   const produtoRepo = new ProdutoRepository(db.pool);
   const movimentacaoRepo = new MovimentacaoRepository(db.pool);
+  const clienteRepo = new ClienteRepository(db.pool);
+  const entregadorRepo = new EntregadorRepository(db.pool);
+  const cepApi = new CepApi();
+  const distanciaApi = new DistanciaApi(cepApi);
 
   const autenticacao = new AutenticacaoService(usuarioRepo, sessao, hash);
   const usuarios = new UsuarioService(usuarioRepo, sessao, hash);
   const produtos = new ProdutoService(produtoRepo, movimentacaoRepo, sessao, db);
   const estoque = new EstoqueService(produtoRepo, movimentacaoRepo, sessao, db);
+  const clientes = new ClienteService(clienteRepo, sessao, cepApi, distanciaApi);
+  const entregadores = new EntregadorService(entregadorRepo, sessao);
 
   if (erroBanco === null) {
     try {
@@ -56,6 +69,8 @@ async function iniciar() {
   new UsuarioController(usuarios).registrar();
   new ProdutoController(produtos).registrar();
   new EstoqueController(estoque).registrar();
+  new ClienteController(clientes).registrar();
+  new EntregadorController(entregadores).registrar();
   ipcMain.handle('db:status', () => ({ ok: erroBanco === null, erro: erroBanco }));
 
   const janela = new BrowserWindow({
