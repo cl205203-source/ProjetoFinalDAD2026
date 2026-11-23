@@ -97,3 +97,8 @@ Por que `preload.ts` e o renderer não são divididos em módulos: o preload rod
 - `src/renderer/pedidos/pedidos.dto.ts`: declara os tipos globais e estende a `PontePreload` com os métodos de pedidos.
 - `src/renderer/pedidos/pedidos.tela.ts`: implementa a aba Pedidos com filtro, formulário, itens dinâmicos, troca de status, cancelamento e exclusão.
 - Integração: `main.ts` registra o `PedidoController`; `preload.ts` expõe os métodos; `index.html` adiciona a aba/seção; `renderer.ts` registra a `PedidosTela`.
+
+### RF12 — Cotação do dólar
+- `src/main/integrations.ts` (`CotacaoApi`): consulta USD/BRL na AwesomeAPI, com fallback para PTAX do Banco Central e cache de 10 minutos.
+- `src/main/cotacao/cotacao.controller.ts`: canal IPC `cotacao:dolar`, com mensagem amigável quando a cotação está indisponível.
+- Renderer: `preload.ts` expõe `consultarCotacaoDolar`; a aba Produtos exibe o card de cotação e o botão "Atualizar cotação" para apoiar a RN03.
