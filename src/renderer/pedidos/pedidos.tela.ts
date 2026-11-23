@@ -44,6 +44,9 @@ class PedidosTela implements Tela {
 
   async ativar(usuario: UsuarioDTO): Promise<void> {
     this.usuarioAtual = usuario;
+    // Admin e Atendente podem criar/editar pedidos (RF08).
+    const podeGerenciar = usuario.perfil === 'ADMIN' || usuario.perfil === 'ATENDENTE';
+    Dom.pegar('btn-novo-pedido').classList.toggle('d-none', !podeGerenciar);
     await Promise.all([this.carregarAuxiliares(), this.carregar()]);
   }
 
@@ -183,8 +186,7 @@ class PedidosTela implements Tela {
 
   private async cancelar(p: PedidoDTO): Promise<void> {
     if (!confirm(`Cancelar o pedido #${p.id}? O estoque será estornado.`)) return;
-    const obs = prompt('Motivo do cancelamento (opcional):', '') ?? '';
-    const r = await bridge.cancelarPedido(p.id, { observacao: obs || null });
+    const r = await bridge.cancelarPedido(p.id, { observacao: null });
     if (!r.ok) {
       Aviso.mostrar(r.erro, 'danger');
       return;
