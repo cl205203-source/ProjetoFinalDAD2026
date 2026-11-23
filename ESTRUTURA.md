@@ -78,3 +78,10 @@ Por que `preload.ts` e o renderer não são divididos em módulos: o preload rod
 - `integrations.ts`: `CepApi` (ViaCEP, com BrasilAPI de reserva) e `DistanciaApi` (Nominatim/OpenStreetMap + Haversine). Falha da API de distância não impede o cadastro: a distância fica vazia e é recalculada na próxima edição.
 - Pedidos: usam `clientes.id` / `entregadores.id` em `pedidos.cliente_id` / `pedidos.entregador_id` e `clientes.distancia_km` na precificação da entrega. O módulo `pedidos/` implementa o RF08: os preços unitários são lidos de `produtos.preco_venda` no main (nunca vêm da tela), o total é `soma(subtotais) + valor_frete`, e a baixa/estorno de estoque chama `EstoqueService.sincronizarPedido`/`estornarPedido` dentro da mesma transação. Pedidos cancelados podem ser excluídos pelo Admin; entregues e ativos ficam no histórico (RN04).
 - Cotação (RF12): `CotacaoApi` consulta a AwesomeAPI (USD/BRL comercial) com reserva no PTAX do Banco Central e cache de 10 minutos. A cotação aparece na aba Produtos para apoiar a precificação de itens importados (RN03).
+
+## Detalhamento da implementação (RF08/RF12)
+
+### RF08 — Backend (model, schemas e repository)
+- `src/main/pedidos/pedido.model.ts`: define `StatusPedido`, a entidade `Pedido`, itens e os tipos públicos usados pelo renderer.
+- `src/main/pedidos/pedido.schemas.ts`: valida com Zod os dados recebidos do renderer (cliente, entregador opcional, distância, frete, status inicial e itens com `produtoId` e `quantidade`).
+- `src/main/pedidos/pedido.repository.ts`: concentra o SQL das tabelas `pedidos` e `itens_pedido`; faz INSERT/UPDATE/DELETE em transação e monta os JOINs com cliente, entregador e usuário.
