@@ -1,6 +1,6 @@
 # Organização do código por módulo
 
-Cada módulo (usuários, produtos, estoque, e os próximos: clientes, entregadores, pedidos) fica na **própria pasta**, com os mesmos arquivos. Assim cada integrante trabalha no seu módulo sem editar os arquivos dos outros.
+Cada módulo (usuários, produtos, estoque, clientes, entregadores, pedidos e cotação) fica na **própria pasta**, com os mesmos arquivos. Assim cada integrante trabalha no seu módulo sem editar os arquivos dos outros.
 
 ## Processo main (`src/main`)
 
@@ -22,6 +22,8 @@ src/main/
   estoque/                RF03/RF04: movimentações e motor de baixa/estorno
   clientes/               RF05/RF06: CRUD de clientes, consulta de CEP e distância
   entregadores/           RF07: CRUD de entregadores e disponibilidade
+  pedidos/                RF08: CRUD de pedidos e itens, com baixa/estorno de estoque
+  cotacao/                RF12: canal IPC da cotação do dólar (CotacaoApi em integrations.ts)
 ```
 
 Dentro de cada módulo:
@@ -74,4 +76,5 @@ Por que `preload.ts` e o renderer não são divididos em módulos: o preload rod
 
 - `.env`: informe `LOJA_CEP` (ou `LOJA_LATITUDE` e `LOJA_LONGITUDE`) para o cálculo de distância (RF06).
 - `integrations.ts`: `CepApi` (ViaCEP, com BrasilAPI de reserva) e `DistanciaApi` (Nominatim/OpenStreetMap + Haversine). Falha da API de distância não impede o cadastro: a distância fica vazia e é recalculada na próxima edição.
-- Pedidos: usem `clientes.id` / `entregadores.id` em `pedidos.cliente_id` / `pedidos.entregador_id` e `clientes.distancia_km` na precificação da entrega. O SQL traz as FKs comentadas.
+- Pedidos: usam `clientes.id` / `entregadores.id` em `pedidos.cliente_id` / `pedidos.entregador_id` e `clientes.distancia_km` na precificação da entrega. O módulo `pedidos/` implementa o RF08: os preços unitários são lidos de `produtos.preco_venda` no main (nunca vêm da tela), o total é `soma(subtotais) + valor_frete`, e a baixa/estorno de estoque chama `EstoqueService.sincronizarPedido`/`estornarPedido` dentro da mesma transação. Pedidos cancelados podem ser excluídos pelo Admin; entregues e ativos ficam no histórico (RN04).
+- Cotação (RF12): `CotacaoApi` consulta a AwesomeAPI (USD/BRL comercial) com reserva no PTAX do Banco Central e cache de 10 minutos. A cotação aparece na aba Produtos para apoiar a precificação de itens importados (RN03).
