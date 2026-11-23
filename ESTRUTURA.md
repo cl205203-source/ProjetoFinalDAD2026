@@ -85,3 +85,10 @@ Por que `preload.ts` e o renderer não são divididos em módulos: o preload rod
 - `src/main/pedidos/pedido.model.ts`: define `StatusPedido`, a entidade `Pedido`, itens e os tipos públicos usados pelo renderer.
 - `src/main/pedidos/pedido.schemas.ts`: valida com Zod os dados recebidos do renderer (cliente, entregador opcional, distância, frete, status inicial e itens com `produtoId` e `quantidade`).
 - `src/main/pedidos/pedido.repository.ts`: concentra o SQL das tabelas `pedidos` e `itens_pedido`; faz INSERT/UPDATE/DELETE em transação e monta os JOINs com cliente, entregador e usuário.
+
+### RF08 — Backend (service, controller e regras)
+- `src/main/pedidos/pedido.service.ts`: lê o preço unitário de `produtos.preco_venda` no main; calcula `valor_total = soma(subtotais) + valor_frete`.
+- A baixa/estorno de estoque usa `EstoqueService.sincronizarPedido`/`estornarPedido` dentro da mesma transação do pedido.
+- RN02: o status `SAIU_PARA_ENTREGA` exige entregador vinculado.
+- RN04: só Admin pode excluir, e apenas pedidos `CANCELADO`; pedidos ativos/entregues permanecem no histórico.
+- `src/main/pedidos/pedido.controller.ts`: expõe os canais IPC `pedidos:listar|obter|criar|atualizar|alterarStatus|cancelar|excluir`.
