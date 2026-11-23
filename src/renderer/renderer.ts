@@ -1,10 +1,10 @@
 // Casca da interface: login, navegação por abas e ligação entre as telas.
 // Só conversa com o main via window.api (preload).
 
-type Aba = 'produtos' | 'estoque' | 'clientes' | 'entregadores' | 'usuarios';
+type Aba = 'produtos' | 'estoque' | 'clientes' | 'entregadores' | 'pedidos' | 'usuarios';
 
 class App {
-  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'clientes', 'entregadores', 'usuarios'];
+  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'clientes', 'entregadores', 'pedidos', 'usuarios'];
 
   private usuarioAtual: UsuarioDTO | null = null;
 
@@ -13,9 +13,11 @@ class App {
   private readonly estoque = new EstoqueTela();
   private readonly clientes = new ClientesTela();
   private readonly entregadores = new EntregadoresTela();
+  private readonly pedidos = new PedidosTela();
 
   constructor() {
     Dom.pegar<HTMLFormElement>('form-login').addEventListener('submit', (e) => void this.aoLogar(e));
+    Dom.pegar('btn-atualizar-cotacao').addEventListener('click', () => void this.atualizarCotacao());
     Dom.pegar('btn-sair').addEventListener('click', () => void this.aoSair());
     Dom.pegar('btn-minha-senha').addEventListener('click', () => {
       if (this.usuarioAtual) this.usuarios.abrirMinhaSenha(this.usuarioAtual);
@@ -68,6 +70,7 @@ class App {
     this.estoque.limpar();
     this.clientes.limpar();
     this.entregadores.limpar();
+    this.pedidos.limpar();
     Aviso.limpar();
     Dom.pegar('tela-app').classList.add('d-none');
     Dom.pegar('tela-login').classList.remove('d-none');
@@ -94,6 +97,7 @@ class App {
     // Aba de usuários: exclusiva do Administrador.
     Dom.pegar('item-aba-usuarios').classList.toggle('d-none', this.usuarioAtual?.perfil !== 'ADMIN');
     await this.abrirAba('produtos');
+    void this.atualizarCotacao();
   }
 
   private async abrirAba(aba: Aba): Promise<void> {
@@ -104,6 +108,7 @@ class App {
     this.produtos.fecharForm();
     this.clientes.fecharForm();
     this.entregadores.fecharForm();
+    this.pedidos.fecharForm();
 
     document.querySelectorAll<HTMLElement>('[data-aba]').forEach((b) => {
       b.classList.toggle('active', b.dataset.aba === aba);
@@ -116,7 +121,23 @@ class App {
     if (aba === 'estoque') await this.estoque.ativar(u);
     if (aba === 'clientes') await this.clientes.ativar(u);
     if (aba === 'entregadores') await this.entregadores.ativar(u);
+    if (aba === 'pedidos') await this.pedidos.ativar(u);
     if (aba === 'usuarios' && u.perfil === 'ADMIN') await this.usuarios.ativar(u);
+  }
+
+  /** RF12: consulta a cotação do dólar via main e mostra na aba de produtos (RN03). */
+  private async atualizarCotacao(): Promise<void> {
+    const valor = Dom.pegar<HTMLElement>('cotacao-dolar');
+    const fonte = Dom.pegar<HTMLElement>('cotacao-dolar-fonte');
+    valor.textContent = 'Consultando...';
+    const r = await bridge.consultarCotacaoDolar();
+    if (!r.ok) {
+      valor.textContent = 'Indisponível no momento';
+      fonte.textContent = r.erro;
+      return;
+    }
+    valor.textContent = `US$ 1,00 = ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(r.dados.valor)}`;
+    fonte.textContent = `${r.dados.fonte} — ${Formato.dataHora(r.dados.consultadaEm)}`;
   }
 
   private async movimentar(p: ProdutoDTO): Promise<void> {

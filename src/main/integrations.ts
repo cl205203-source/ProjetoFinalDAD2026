@@ -226,3 +226,90 @@ export class DistanciaApi {
     return 6371 * 2 * Math.asin(Math.sqrt(h));
   }
 }
+
+// ---------------------------------------------------------------------------
+// API 3: cotação comercial do dólar (AwesomeAPI, com PTAX do Banco Central como reserva)
+// ---------------------------------------------------------------------------
+
+/** Cotação de USD/BRL obtida em tempo real. */
+export interface CotacaoDolar {
+  valor: number; // preço de 1 USD em BRL
+  fonte: string;
+  consultadaEm: string; // ISO
+}
+
+interface AwesomeApiResposta {
+  USDBRL?: {
+    bid?: string; // preço de compra (comercial)
+    ask?: string; // preço de venda (comercial)
+    timestamp?: string;
+  };
+}
+
+interface BancoCentralResposta {
+  value?: { cotacaoVenda?: number }[]; // PTAX: coleção OData com cotacaoVenda
+}
+
+export class CotacaoApi {
+  private readonly cache = new CacheSimples<CotacaoDolar>();
+  private static readonly CHAVE_CACHE = 'USD-BRL';
+  private static readonly VALIDADE_MS = 10 * 60 * 1000; // 10 minutos
+
+  /** Nunca lança erro de rede: devolve null para a tela seguir sem a cotação. */
+  async consultarDolar(): Promise<CotacaoDolar | null> {
+    const emCache = this.cache.obter(CotacaoApi.CHAVE_CACHE);
+    if (emCache && Date.now() - new Date(emCache.consultadaEm).getTime() < CotacaoApi.VALIDADE_MS) {
+      return emCache;
+    }
+
+    let cotacao: CotacaoDolar | null = null;
+    try {
+      cotacao = await this.awesomeApi();
+    } catch {
+      try {
+        cotacao = await this.bancoCentral();
+      } catch (erro) {
+        console.warn('[CotacaoApi] não foi possível consultar o dólar:', (erro as Error).message);
+      }
+    }
+
+    if (cotacao) this.cache.guardar(CotacaoApi.CHAVE_CACHE, cotacao);
+    return cotacao;
+  }
+
+  private async awesomeApi(): Promise<CotacaoDolar | null> {
+    const r = await axios.get<AwesomeApiResposta>('https://economia.awesomeapi.com.br/json/last/USD-BRL', {
+      timeout: 6000,
+    });
+    const d = r.data?.USDBRL;
+    // "ask" é a cotação de venda (comercial); se ausente, usa "bid".
+    const texto = d?.ask ?? d?.bid;
+    const valor = Number(texto);
+    if (!Number.isFinite(valor) || valor <= 0) return null;
+    return {
+      valor: Math.round(valor * 10000) / 10000,
+      fonte: 'AwesomeAPI (USD/BRL comercial)',
+      consultadaEm: new Date().toISOString(),
+    };
+  }
+
+  private async bancoCentral(): Promise<CotacaoDolar | null> {
+    // PTAX do dia atual (formato padrão do BC: 2 casas decimais, quando fechada).
+    const hoje = new Date();
+    const data = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+    const r = await axios.get<BancoCentralResposta>(
+      `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotacao)`,
+      {
+        params: { '@dataCotacao': `'${data}'`, '$format': 'json', '$select': 'cotacaoVenda' },
+        timeout: 6000,
+      },
+    );
+    const valor = Number(r.data?.value?.[0]?.cotacaoVenda);
+    if (!Number.isFinite(valor) || valor <= 0) return null;
+    return {
+      valor: Math.round(valor * 10000) / 10000,
+      fonte: 'Banco Central (PTAX)',
+      consultadaEm: new Date().toISOString(),
+    };
+  }
+}

@@ -6,6 +6,8 @@ import type { ClientePublico } from './clientes/cliente.model';
 import type { EnderecoConsultado } from './clientes/cliente.service';
 import type { EntregadorPublico, StatusEntregador } from './entregadores/entregador.model';
 import type { CategoriaProduto, ProdutoPublico } from './produtos/produto.model';
+import type { PedidoPublico, StatusPedido } from './pedidos/pedido.model';
+import type { CotacaoDolar } from './integrations';
 import type { PerfilUsuario, UsuarioPublico } from './usuarios/usuario.model';
 
 const chamar = <T>(canal: string, ...args: unknown[]): Promise<Resultado<T>> => ipcRenderer.invoke(canal, ...args);
@@ -100,4 +102,35 @@ contextBridge.exposeInMainWorld('api', {
   inativarEntregador: (id: number) => chamar<void>('entregadores:inativar', id),
   reativarEntregador: (id: number) => chamar<void>('entregadores:reativar', id),
   excluirEntregador: (id: number) => chamar<void>('entregadores:excluir', id),
+
+  // Pedidos
+  listarPedidos: (f: { busca?: string; status?: StatusPedido; clienteId?: number; entregadorId?: number }) =>
+    chamar<PedidoPublico[]>('pedidos:listar', f),
+  obterPedido: (id: number) => chamar<PedidoPublico>('pedidos:obter', id),
+  criarPedido: (d: {
+    clienteId: number;
+    entregadorId: number | null;
+    distanciaKm: number | null;
+    valorFrete: number;
+    statusPedido: StatusPedido;
+    itens: { produtoId: number; quantidade: number }[];
+  }) => chamar<PedidoPublico>('pedidos:criar', d),
+  atualizarPedido: (
+    id: number,
+    d: {
+      clienteId: number;
+      entregadorId: number | null;
+      distanciaKm: number | null;
+      valorFrete: number;
+      statusPedido: StatusPedido;
+      itens: { produtoId: number; quantidade: number }[];
+    },
+  ) => chamar<PedidoPublico>('pedidos:atualizar', id, d),
+  alterarStatusPedido: (id: number, d: { statusPedido: StatusPedido; entregadorId: number | null }) =>
+    chamar<PedidoPublico>('pedidos:alterarStatus', id, d),
+  cancelarPedido: (id: number, d: { observacao?: string | null }) => chamar<PedidoPublico>('pedidos:cancelar', id, d),
+  excluirPedido: (id: number) => chamar<void>('pedidos:excluir', id),
+
+  // Cotação do dólar (RF12)
+  consultarCotacaoDolar: () => chamar<CotacaoDolar>('cotacao:dolar'),
 });
