@@ -92,3 +92,8 @@ Por que `preload.ts` e o renderer não são divididos em módulos: o preload rod
 - RN02: o status `SAIU_PARA_ENTREGA` exige entregador vinculado.
 - RN04: só Admin pode excluir, e apenas pedidos `CANCELADO`; pedidos ativos/entregues permanecem no histórico.
 - `src/main/pedidos/pedido.controller.ts`: expõe os canais IPC `pedidos:listar|obter|criar|atualizar|alterarStatus|cancelar|excluir`.
+
+### RF08 — Renderer e integração
+- `src/renderer/pedidos/pedidos.dto.ts`: declara os tipos globais e estende a `PontePreload` com os métodos de pedidos.
+- `src/renderer/pedidos/pedidos.tela.ts`: implementa a aba Pedidos com filtro, formulário, itens dinâmicos, troca de status, cancelamento e exclusão.
+- Integração: `main.ts` registra o `PedidoController`; `preload.ts` expõe os métodos; `index.html` adiciona a aba/seção; `renderer.ts` registra a `PedidosTela`.
