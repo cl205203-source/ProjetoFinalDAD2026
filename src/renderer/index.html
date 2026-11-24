@@ -48,6 +48,8 @@
       <li class="nav-item"><button type="button" class="nav-link" data-aba="clientes">Clientes</button></li>
       <li class="nav-item"><button type="button" class="nav-link" data-aba="entregadores">Entregadores</button></li>
       <li class="nav-item"><button type="button" class="nav-link" data-aba="pedidos">Pedidos</button></li>
+      <!-- [RF10] Aba de navegação para a Central de Entregas em tempo real (acompanhamento de entregadores e pedidos) -->
+      <li class="nav-item"><button type="button" class="nav-link" data-aba="entregas">Entregas</button></li>
       <li class="nav-item" id="item-aba-usuarios"><button type="button" class="nav-link" data-aba="usuarios">Usuários</button></li>
     </ul>
 
@@ -364,6 +366,7 @@
             <thead class="table-light">
               <tr>
                 <th>Cliente</th><th>CPF</th><th>Telefone</th><th>Endereço</th>
+                <!-- [RF09] Distância cadastrada do cliente até o pet shop (fallback caso serviços de rota estejam indisponíveis) -->
                 <th class="text-end">Distância</th><th>Status</th><th class="text-end">Ações</th>
               </tr>
             </thead>
@@ -468,21 +471,102 @@
                 <label for="ped-cliente" class="form-label">Cliente</label>
                 <select id="ped-cliente" class="form-select"></select>
               </div>
+              <!-- [RF10] Vínculo de entregador responsável ao pedido (opcional no momento da criação/edição) -->
               <div class="col-md-4">
                 <label for="ped-entregador" class="form-label">Entregador (opcional)</label>
                 <select id="ped-entregador" class="form-select"></select>
               </div>
+              <!-- [RF09] Distância calculada (readonly) - preenchida automaticamente pelo sistema com base no endereço e CEP do cliente -->
               <div class="col-md-2">
-                <label for="ped-distancia" class="form-label">Distância (km)</label>
-                <input id="ped-distancia" type="text" inputmode="decimal" class="form-control" placeholder="0,0">
+                <label for="ped-distancia" class="form-label">Distância (km) <span class="text-muted fw-normal">(calculada)</span></label>
+                <input id="ped-distancia" type="text" inputmode="decimal" class="form-control bg-light" placeholder="—" readonly aria-readonly="true">
+                <div class="form-text">Preenchida automaticamente via endereço e CEP.</div>
               </div>
+              <!-- [RF09] Taxa de entrega / Frete (readonly) - calculada pelo sistema via API de rotas com base na distância e políticas de frete -->
               <div class="col-md-2">
-                <label for="ped-frete" class="form-label">Frete (R$)</label>
-                <input id="ped-frete" type="text" inputmode="decimal" class="form-control" value="0,00">
+                <label for="ped-frete" class="form-label">Frete (R$) <span class="text-muted fw-normal">(calculado)</span></label>
+                <input id="ped-frete" type="text" inputmode="decimal" class="form-control bg-light" value="0,00" readonly aria-readonly="true">
+                <div class="form-text">Taxa sugerida pelo sistema.</div>
               </div>
               <div class="col-md-3">
                 <label for="ped-status" class="form-label">Status inicial</label>
                 <select id="ped-status" class="form-select"></select>
+              </div>
+            </div>
+
+            <!-- [RF09] Painel de cálculo dinâmico de distância, taxa de entrega e previsão pelo endereço do cliente -->
+            <!-- [RF11] Informações e aviso sobre envio automático de e-mail de confirmação ao salvar o pedido -->
+            <div class="col-12 mt-3">
+              <div class="border rounded bg-white p-3">
+                <!-- [RF09] Cabeçalho com resumo da entrega, indicação da sede (origem) e botão para calcular / recalcular taxa de entrega -->
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                  <div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                      <span class="small text-muted fw-semibold">Distância e taxa de entrega (RF09)</span>
+                      <!-- [RF09] Badge indicando a origem da rota de entrega (Sede do Pet Shop) -->
+                      <span class="badge bg-light text-secondary border d-inline-flex align-items-center gap-1" title="Ponto de partida das entregas">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-geo-alt-fill text-success" viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M8 16s6-5.686 6-10A6 6 0 0 0 2 6c0 4.314 6 10 6 10m0-7a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/>
+                        </svg>
+                        Origem: Sede Pet Shop Delivery
+                      </span>
+                    </div>
+                    <!-- [RF09] Resumo dinâmico da entrega e instrução sobre cálculo a partir do endereço e CEP do cliente -->
+                    <div id="ped-entrega-resumo" class="small text-muted">
+                      Selecione o cliente para calcular a distância e taxa a partir do seu endereço e CEP até a Sede do Pet Shop Delivery.
+                    </div>
+                    <!-- [RF09] Mensagem de ajuda explícita sobre o cálculo automático a partir do endereço e CEP -->
+                    <div class="form-text small text-secondary mt-1">
+                      A rota é calculada automaticamente a partir do endereço e CEP do cliente selecionado até a Sede Pet Shop Delivery.
+                    </div>
+                  </div>
+                  <!-- [RF09] Botão para calcular / recalcular taxa de entrega com feedback visual acessível -->
+                  <button id="btn-calcular-entrega" type="button" class="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1" title="Recalcular rota e taxa de entrega com base no endereço e CEP do cliente" aria-label="Recalcular distância e taxa de entrega">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16" aria-hidden="true">
+                      <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/>
+                      <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/>
+                    </svg>
+                    <span>Recalcular taxa de entrega</span>
+                  </button>
+                </div>
+
+                <!-- [RF09] Painel explicativo e detalhado: Distância calculada (km), Duração estimada (min), Taxa de entrega sugerida, Previsão calculada e Fonte da distância / rota (API OSRM, Haversine em linha reta ou Distância cadastrada) -->
+                <div id="ped-entrega-resultado" class="row g-2 mt-3 pt-3 border-top d-none" aria-live="polite">
+                  <div class="col-6 col-md-2">
+                    <span class="small text-muted d-block">Distância</span>
+                    <span id="ped-entrega-distancia" class="fw-semibold">—</span>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <span class="small text-muted d-block">Duração estimada</span>
+                    <span id="ped-entrega-duracao" class="fw-semibold">—</span>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <span class="small text-muted d-block">Taxa de entrega</span>
+                    <span id="ped-entrega-taxa" class="fw-semibold">—</span>
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <span class="small text-muted d-block">Previsão de entrega</span>
+                    <span id="ped-entrega-previsao" class="fw-semibold">—</span>
+                  </div>
+                  <div class="col-12 col-md-3">
+                    <span class="small text-muted d-block">Fonte do cálculo</span>
+                    <span id="ped-entrega-fonte" class="fw-semibold">—</span>
+                  </div>
+                </div>
+
+                <!-- [RF09] Área de alertas e avisos dinâmicos sobre API de rotas / frete grátis / rota indisponível -->
+                <div id="ped-entrega-aviso" class="alert alert-warning py-2 small mt-3 mb-0 d-none" role="status"></div>
+
+                <!-- [RF11] Caixa de aviso informando o envio automático de e-mail de confirmação ao cliente com resumo de itens, valores e previsão, incluindo modo simulação/log -->
+                <div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 mt-3 mb-0 small" role="note">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-envelope-check flex-shrink-0" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2 2a2 2 0 0 0-2 2v8.01A2 2 0 0 0 2 14h5.5a.5.5 0 0 0 0-1H2a1 1 0 0 1-.966-.741l5.64-3.471L8 9.583l7-4.2V8.5a.5.5 0 0 0 1 0V4a2 2 0 0 0-2-2zm3.708 6.208L1 11.105V5.383zM1 4.217V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v.217l-7 4.2z"/>
+                    <path d="M16 12.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0m-1.993-1.679a.5.5 0 0 0-.686.172l-1.17 1.95-.547-.547a.5.5 0 0 0-.708.708l.774.773a.75.75 0 0 0 1.174-.144l1.335-2.226a.5.5 0 0 0-.172-.686"/>
+                  </svg>
+                  <div>
+                    <strong>Confirmação automática por e-mail (RF11):</strong> Ao salvar o pedido, um e-mail de confirmação é disparado automaticamente para o cliente contendo o resumo dos itens, valores (subtotal, frete e total), endereço de entrega e a previsão calculada. Mesmo sem servidor SMTP externo conectado, o e-mail é gerado e registrado com sucesso em modo de simulação/log.
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -521,18 +605,85 @@
           </div>
         </form>
 
+        <!-- [RF08/RF09/RF10] Tabela de listagem de pedidos -->
         <div class="card table-responsive">
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th>Pedido</th><th>Cliente / Data</th><th>Entregador</th>
-                <th class="text-end">Total</th><th class="text-end">Distância</th>
-                <th>Status</th><th>Itens</th><th class="text-end">Ações</th>
+                <th>Pedido</th>
+                <th>Cliente / Data</th>
+                <!-- [RF10] Coluna de Entregador responsável vinculado ao pedido -->
+                <th>Entregador (RF10)</th>
+                <th class="text-end">Total</th>
+                <!-- [RF09] Coluna com a distância calculada (km) e previsão estimada de entrega do pedido -->
+                <th class="text-end">Distância / Previsão</th>
+                <th>Status</th>
+                <th>Itens</th>
+                <th class="text-end">Ações</th>
               </tr>
             </thead>
             <tbody id="tabela-pedidos"></tbody>
           </table>
         </div>
+      </section>
+
+      <!-- ===== [RF10] ABA ENTREGAS: CENTRAL DE ENTREGAS EM TEMPO REAL ===== -->
+      <!-- [RF10] Acompanhamento do ciclo de vida dos pedidos, entregadores responsáveis e métricas operacionais em tempo real -->
+      <section id="secao-entregas" class="d-none">
+        <!-- [RF10] Cabeçalho informando o acompanhamento em tempo real do entregador responsável por cada pedido -->
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+          <div>
+            <h4 class="mb-0">Central de Entregas</h4>
+            <p class="text-muted small mb-0">Acompanhamento em tempo real do entregador responsável por cada pedido (RF10).</p>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <!-- [RF10] Indicador de última atualização em tempo real (atualizado via polling de 5s) -->
+            <span class="small text-muted">Atualizado em <span id="entrega-atualizado-em">—</span></span>
+            <!-- [RF10] Botão para atualização imediata dos dados de entregas -->
+            <button id="btn-atualizar-entregas" type="button" class="btn btn-sm btn-outline-secondary">Atualizar agora</button>
+          </div>
+        </div>
+
+        <!-- [RF10] Alerta de erro de carregamento ou falha de comunicação com o painel de entregas -->
+        <div id="entrega-erro" class="alert alert-danger py-2 small d-none" role="alert"></div>
+
+        <!-- [RF10] Cards de métricas operacionais: Entregas ativas, Em rota de entrega e Entregadores em rota -->
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <div class="card card-body py-2 h-100">
+              <span class="small text-muted">Entregas ativas</span>
+              <div id="entrega-resumo-ativas" class="fw-semibold">—</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card card-body py-2 h-100">
+              <span class="small text-muted">Em rota de entrega</span>
+              <div id="entrega-resumo-em-rota" class="fw-semibold">—</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card card-body py-2 h-100">
+              <span class="small text-muted">Entregadores em rota</span>
+              <div id="entrega-resumo-entregadores" class="fw-semibold">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [RF10] Legenda visual dos 5 status do ciclo de vida: Pendente, Em Separação, Saiu para Entrega, Entregue, Cancelado -->
+        <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 small text-muted mb-3">
+          <span class="fw-semibold text-body">Status da entrega:</span>
+          <span class="badge bg-warning text-dark">Pendente</span>
+          <span class="badge bg-info text-dark">Em Separação</span>
+          <span class="badge bg-primary">Saiu para Entrega</span>
+          <span class="badge bg-success">Entregue</span>
+          <span class="badge bg-secondary">Cancelado</span>
+          <span class="ms-md-auto">Atualização automática a cada 5 segundos.</span>
+        </div>
+
+        <!-- [RF10] Container dinâmico para renderização dos entregadores, seus pedidos sob responsabilidade e pedidos sem entregador -->
+        <div id="painel-entregas" class="row g-3"></div>
+        <!-- [RF10] Banner de estado vazio quando não houver entregas ativas no momento -->
+        <div id="entregas-vazio" class="alert alert-light border d-none mb-0">Nenhuma entrega ativa no momento.</div>
       </section>
 
       <!-- ===== ABA USUÁRIOS (somente ADMIN) ===== -->
@@ -563,7 +714,10 @@
   <script src="../../dist/renderer/estoque/estoque.tela.js"></script>
   <script src="../../dist/renderer/clientes/clientes.tela.js"></script>
   <script src="../../dist/renderer/entregadores/entregadores.tela.js"></script>
+  <!-- [RF08/RF09/RF11] Script da tela de pedidos: itens, cálculo de taxa de entrega (RF09) e notificação por e-mail (RF11) -->
   <script src="../../dist/renderer/pedidos/pedidos.tela.js"></script>
+  <!-- [RF10] Script da central de entregas em tempo real com polling de 5 segundos -->
+  <script src="../../dist/renderer/entregas/entregas.tela.js"></script>
   <script src="../../dist/renderer/renderer.js"></script>
 </body>
 </html>

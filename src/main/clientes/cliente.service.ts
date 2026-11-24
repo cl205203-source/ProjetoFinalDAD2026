@@ -29,12 +29,19 @@ export class ClienteService {
     return (await this.clientes.listar(filtro)).map((c) => c.paraPublico());
   }
 
-  /** RF06: preenche o endereço pelo CEP e calcula a distância aproximada até a loja. */
+  /** [RF06] / [RF09]: preenche o endereço pelo CEP e calcula a distância aproximada até a loja. */
   async consultarCep(entrada: unknown): Promise<EnderecoConsultado> {
     this.sessao.exigirPerfil('ADMIN', 'ATENDENTE');
     const cep = Validador.parse(EsquemasCliente.cep, entrada);
     const endereco = await this.cepApi.consultar(cep);
-    const distanciaKm = await this.distanciaApi.calcularKm(endereco);
+    // [RF09] Calcula distância com os campos completos retornados pela consulta de CEP
+    const distanciaKm = await this.distanciaApi.calcularKm({
+      logradouro: endereco.logradouro,
+      bairro: endereco.bairro,
+      cidade: endereco.cidade,
+      uf: endereco.uf,
+      cep: endereco.cep,
+    });
     return { ...endereco, distanciaKm };
   }
 
@@ -43,8 +50,15 @@ export class ClienteService {
     const dados = Validador.parse(EsquemasCliente.criar, entrada);
     await this.garantirCpfLivre(dados.cpf, null);
 
-    // A distância é sempre recalculada aqui: o valor mostrado no formulário não é confiável.
-    const distanciaKm = await this.distanciaApi.calcularKm(dados);
+    // [RF09] A distância é sempre recalculada aqui com os dados completos de endereço
+    const distanciaKm = await this.distanciaApi.calcularKm({
+      logradouro: dados.logradouro,
+      numero: dados.numero,
+      bairro: dados.bairro,
+      cidade: dados.cidade,
+      uf: dados.uf,
+      cep: dados.cep,
+    });
     try {
       const id = await this.clientes.criar(dados, distanciaKm);
       return (await this.obterOuFalhar(id)).paraPublico();
@@ -60,10 +74,17 @@ export class ClienteService {
     const atual = await this.obterOuFalhar(id);
     await this.garantirCpfLivre(dados.cpf, id);
 
-    // Só consulta a API de novo se o endereço mudou ou se a distância nunca foi calculada.
+    // [RF09] Só consulta a API de novo se o endereço mudou ou se a distância nunca foi calculada.
     const distanciaKm =
       atual.mudouEndereco(dados) || atual.distanciaKm === null
-        ? await this.distanciaApi.calcularKm(dados)
+        ? await this.distanciaApi.calcularKm({
+            logradouro: dados.logradouro,
+            numero: dados.numero,
+            bairro: dados.bairro,
+            cidade: dados.cidade,
+            uf: dados.uf,
+            cep: dados.cep,
+          })
         : atual.distanciaKm;
 
     try {

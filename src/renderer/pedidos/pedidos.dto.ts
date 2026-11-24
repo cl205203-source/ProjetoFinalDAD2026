@@ -24,6 +24,9 @@ interface PedidoDTO {
   distanciaKm: number | null;
   valorFrete: number;
   valorTotal: number;
+  // RF09: previsão calculada no main (ISO) e, na criação, o resultado do e-mail (RF11).
+  previsaoEntrega: string | null;
+  emailConfirmacao?: { enviado: boolean; mensagem: string };
   itens: ItemPedidoDTO[];
 }
 

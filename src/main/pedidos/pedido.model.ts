@@ -1,4 +1,4 @@
-// Model de pedidos e itens (RF08).
+// Model de pedidos e itens (RF08/RF11).
 
 export const STATUS_PEDIDO = [
   'PENDENTE',
@@ -19,6 +19,12 @@ export interface ItemPedidoPublico {
   subtotal: number;
 }
 
+/** RF11: resultado do envio do e-mail de confirmação (nunca impede a criação do pedido). */
+export interface ResultadoEmailConfirmacao {
+  enviado: boolean;
+  mensagem: string;
+}
+
 /** Pedido devolvido ao renderer ( somente leitura, sem dados sensíveis). */
 export interface PedidoPublico {
   id: number;
@@ -33,7 +39,11 @@ export interface PedidoPublico {
   distanciaKm: number | null;
   valorFrete: number;
   valorTotal: number;
+  /** RF09: previsão calculada no main (ISO); null quando não foi possível calcular. */
+  previsaoEntrega: string | null;
   itens: ItemPedidoPublico[];
+  /** RF11: presente somente no retorno de criação do pedido. */
+  emailConfirmacao?: ResultadoEmailConfirmacao;
 }
 
 export interface DadosItemPedido {
@@ -58,6 +68,7 @@ export interface DadosPedido {
   distanciaKm: number | null;
   valorFrete: number;
   valorTotal: number;
+  previsaoEntrega: Date | null;
   itens: DadosItemPedido[];
 }
 
@@ -84,6 +95,10 @@ export class Pedido {
     return this.d.itens;
   }
 
+  get previsaoEntrega(): Date | null {
+    return this.d.previsaoEntrega;
+  }
+
   estaCancelado(): boolean {
     return this.d.statusPedido === 'CANCELADO';
   }
@@ -92,6 +107,8 @@ export class Pedido {
     return {
       ...this.d,
       dataPedido: this.d.dataPedido.toISOString(),
+      // RF09: a previsão trafega como ISO (ou null).
+      previsaoEntrega: this.d.previsaoEntrega ? this.d.previsaoEntrega.toISOString() : null,
       itens: this.d.itens.map((i) => ({ ...i })),
     };
   }

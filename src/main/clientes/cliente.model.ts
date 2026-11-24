@@ -37,9 +37,16 @@ export class Cliente {
     readonly criadoEm: Date,
   ) {}
 
-  /** O endereço mudou em relação ao informado? (se mudou, a distância precisa ser recalculada) */
-  mudouEndereco(e: { cep: string; logradouro: string; cidade: string; uf: string }): boolean {
-    return this.cep !== e.cep || this.logradouro !== e.logradouro || this.cidade !== e.cidade || this.uf !== e.uf;
+  /** [RF09] O endereço mudou em relação ao informado? (se mudou, a distância precisa ser recalculada) */
+  mudouEndereco(e: { cep: string; logradouro: string; cidade: string; uf: string; numero?: string; bairro?: string }): boolean {
+    return (
+      this.cep !== e.cep ||
+      this.logradouro !== e.logradouro ||
+      this.cidade !== e.cidade ||
+      this.uf !== e.uf ||
+      (e.numero !== undefined && this.numero !== e.numero) ||
+      (e.bairro !== undefined && this.bairro !== e.bairro)
+    );
   }
 
   paraPublico(): ClientePublico {

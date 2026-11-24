@@ -16,6 +16,7 @@ interface PedidoRow extends RowDataPacket {
   distancia_km: number | null;
   valor_frete: number;
   valor_total: number;
+  previsao_entrega: Date | null;
 }
 
 interface ItemRow extends RowDataPacket {
@@ -41,6 +42,8 @@ export interface DadosCabecalhoPedido {
   distanciaKm: number | null;
   valorFrete: number;
   valorTotal: number;
+  /** RF09: previsão calculada pelo main (coluna pedidos.previsao_entrega já existente). */
+  previsaoEntrega: Date | null;
   statusPedido: StatusPedido;
 }
 
@@ -61,7 +64,7 @@ const JOIN =
 const COLUNAS =
   `p.id, p.cliente_id, c.nome AS cliente_nome, p.entregador_id, e.nome AS entregador_nome,
    p.usuario_id, u.nome AS usuario_nome, p.data_pedido, p.status_pedido,
-   p.distancia_km, p.valor_frete, p.valor_total`;
+   p.distancia_km, p.valor_frete, p.valor_total, p.previsao_entrega`;
 
 export class PedidoRepository {
   constructor(private readonly pool: Pool) {}
@@ -136,9 +139,12 @@ export class PedidoRepository {
   async criar(d: DadosCabecalhoPedido, itens: ItemParaGravar[], exec: Executor): Promise<number> {
     const [res] = await exec.execute<ResultSetHeader>(
       `INSERT INTO pedidos
-         (cliente_id, entregador_id, usuario_id, data_pedido, status_pedido, distancia_km, valor_frete, valor_total)
-       VALUES (?, ?, ?, NOW(), ?, ?, ?, ?)`,
-      [d.clienteId, d.entregadorId, d.usuarioId, d.statusPedido, d.distanciaKm, d.valorFrete, d.valorTotal],
+         (cliente_id, entregador_id, usuario_id, data_pedido, status_pedido, distancia_km, valor_frete, valor_total, previsao_entrega)
+       VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?)`,
+      [
+        d.clienteId, d.entregadorId, d.usuarioId, d.statusPedido, d.distanciaKm,
+        d.valorFrete, d.valorTotal, d.previsaoEntrega,
+      ],
     );
     const pedidoId = res.insertId;
     await this.inserirItens(pedidoId, itens, exec);
@@ -148,9 +154,13 @@ export class PedidoRepository {
   async atualizar(id: number, d: DadosCabecalhoPedido, itens: ItemParaGravar[], exec: Executor): Promise<void> {
     await exec.execute(
       `UPDATE pedidos
-          SET cliente_id = ?, entregador_id = ?, distancia_km = ?, valor_frete = ?, valor_total = ?, status_pedido = ?
+          SET cliente_id = ?, entregador_id = ?, distancia_km = ?, valor_frete = ?, valor_total = ?,
+              status_pedido = ?, previsao_entrega = ?
         WHERE id = ?`,
-      [d.clienteId, d.entregadorId, d.distanciaKm, d.valorFrete, d.valorTotal, d.statusPedido, id],
+      [
+        d.clienteId, d.entregadorId, d.distanciaKm, d.valorFrete, d.valorTotal,
+        d.statusPedido, d.previsaoEntrega, id,
+      ],
     );
     await exec.execute('DELETE FROM itens_pedido WHERE pedido_id = ?', [id]);
     await this.inserirItens(id, itens, exec);
@@ -212,7 +222,59 @@ export class PedidoRepository {
       distanciaKm: r.distancia_km === null ? null : Number(r.distancia_km),
       valorFrete: Number(r.valor_frete),
       valorTotal: Number(r.valor_total),
+      previsaoEntrega: r.previsao_entrega ? new Date(r.previsao_entrega) : null,
       itens: await this.listarItens(r.id),
     });
+  }
+
+  /** [RF11] E-mail do cliente para a confirmação do pedido (nunca confia em dado do renderer). */
+  async emailCliente(clienteId: number, exec: Executor = this.pool): Promise<string | null> {
+    const [rows] = await exec.execute<(RowDataPacket & { email: string | null })[]>(
+      'SELECT email FROM clientes WHERE id = ? LIMIT 1',
+      [clienteId],
+    );
+    const email = rows[0]?.email?.trim();
+    return email ? email : null;
+  }
+
+  /**
+   * [RF10] Quantas entregas ativas o entregador ainda tem (ignorando, opcionalmente, o pedido atual).
+   * Usado para verificar vínculos ativos de entrega.
+   */
+  async contarEntregasAtivasDoEntregador(
+    entregadorId: number,
+    ignorarPedidoId?: number,
+    exec: Executor = this.pool,
+  ): Promise<number> {
+    const [rows] = await exec.execute<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) AS total
+         FROM pedidos
+        WHERE entregador_id = ?
+          AND status_pedido IN ('PENDENTE', 'EM_SEPARACAO', 'SAIU_PARA_ENTREGA')
+          AND id <> ?`,
+      [entregadorId, ignorarPedidoId ?? 0],
+    );
+    return Number(rows[0].total);
+  }
+
+  /**
+   * [RF10] Quantas entregas em rota ('SAIU_PARA_ENTREGA') o entregador ainda tem
+   * (ignorando, opcionalmente, o pedido atual). Usado para devolvê-lo a DISPONIVEL
+   * assim que finalizar ou cancelar a última entrega em rota.
+   */
+  async contarEntregasEmRotaDoEntregador(
+    entregadorId: number,
+    ignorarPedidoId?: number,
+    exec: Executor = this.pool,
+  ): Promise<number> {
+    const [rows] = await exec.execute<(RowDataPacket & { total: number })[]>(
+      `SELECT COUNT(*) AS total
+         FROM pedidos
+        WHERE entregador_id = ?
+          AND status_pedido = 'SAIU_PARA_ENTREGA'
+          AND id <> ?`,
+      [entregadorId, ignorarPedidoId ?? 0],
+    );
+    return Number(rows[0].total);
   }
 }

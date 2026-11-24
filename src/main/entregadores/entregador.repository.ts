@@ -1,5 +1,6 @@
 // Repository de entregadores: único lugar com SQL da tabela entregadores (sempre prepared statements).
 import { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { Executor } from '../compartilhado/database';
 import { ErroMysql } from '../compartilhado/mysql-erros';
 import { Entregador, StatusEntregador } from './entregador.model';
 
@@ -65,8 +66,9 @@ export class EntregadorRepository {
     return rows.map(EntregadorRepository.mapear);
   }
 
-  async buscarPorId(id: number): Promise<Entregador | null> {
-    const [rows] = await this.pool.execute<EntregadorRow[]>(
+  /** RF10: aceita Executor para ler o entregador dentro da mesma transação do vínculo. */
+  async buscarPorId(id: number, exec: Executor = this.pool): Promise<Entregador | null> {
+    const [rows] = await exec.execute<EntregadorRow[]>(
       `SELECT ${EntregadorRepository.COLUNAS} FROM entregadores WHERE id = ? LIMIT 1`,
       [id],
     );
@@ -96,8 +98,9 @@ export class EntregadorRepository {
     );
   }
 
-  async definirStatus(id: number, status: StatusEntregador): Promise<void> {
-    await this.pool.execute('UPDATE entregadores SET status = ? WHERE id = ?', [status, id]);
+  /** RF10: sincroniza EM_ROTA/DISPONIVEL dentro da transação que mudou o pedido. */
+  async definirStatus(id: number, status: StatusEntregador, exec: Executor = this.pool): Promise<void> {
+    await exec.execute('UPDATE entregadores SET status = ? WHERE id = ?', [status, id]);
   }
 
   /** Soft delete (RN04). */

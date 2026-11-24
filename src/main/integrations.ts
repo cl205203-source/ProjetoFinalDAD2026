@@ -1,6 +1,7 @@
 // Integrações com APIs externas: CepApi, DistanciaApi, CotacaoApi, EmailApi
 // Todas rodam no processo main (o renderer não tem acesso à rede por causa da CSP).
 import axios from 'axios';
+import nodemailer, { Transporter } from 'nodemailer';
 import { AppError } from './compartilhado/erros';
 
 /** Endereço devolvido pela consulta de CEP. */
@@ -116,16 +117,45 @@ export class CepApi {
 }
 
 // ---------------------------------------------------------------------------
-// API 2: distância até a loja (geocodificação Nominatim/OpenStreetMap + Haversine)
+// [RF09] API 2: distância até a loja (geocodificação Nominatim/OpenStreetMap + roteamento OSRM + Haversine)
 // ---------------------------------------------------------------------------
 interface NominatimItem {
   lat: string;
   lon: string;
 }
 
+/** [RF09] Dados do endereço de destino para geocodificação e cálculo de rota. */
+export interface DestinoEndereco {
+  logradouro: string;
+  numero?: string;
+  bairro?: string;
+  cidade: string;
+  uf: string;
+  cep?: string;
+}
+
+/** [RF09] Rota calculada entre a loja e o endereço de entrega via OSRM ou fallback Haversine. */
+export interface RotaCalculada {
+  distanciaKm: number;
+  duracaoMin: number;
+  origem: 'OSRM' | 'HAVERSINE';
+}
+
+interface OsrmResposta {
+  code?: string;
+  routes?: { distance?: number; duration?: number }[];
+}
+
 export class DistanciaApi {
   private static readonly INTERVALO_MS = 1100; // Nominatim permite no máximo 1 requisição/segundo
+  // [RF09] Coordenadas padrão da matriz do pet shop (Campinas/SP - Centro) caso o .env não informe ou falhe
+  private static readonly ORIGEM_PADRAO: Coordenada = {
+    latitude: -22.9056,
+    longitude: -47.0583,
+  };
+
   private readonly cache = new CacheSimples<Coordenada | null>();
+  private readonly cacheRotas = new CacheSimples<RotaCalculada>();
   private origem: Coordenada | null = null;
   private ultimaChamada = 0;
   private fila: Promise<void> = Promise.resolve();
@@ -133,71 +163,211 @@ export class DistanciaApi {
   constructor(private readonly cepApi: CepApi) {}
 
   /**
-   * Distância aproximada, em km e em linha reta, entre a loja e o endereço.
-   * Nunca lança erro: se a API estiver fora do ar ou o endereço não for encontrado, devolve null
-   * (o cadastro do cliente continua funcionando e a distância pode ser recalculada depois).
+   * [RF09] Distância aproximada, em km e em linha reta, entre a loja e o endereço.
+   * Nunca lança erro: se a API estiver fora do ar ou o endereço não for encontrado, devolve null.
    */
-  async calcularKm(e: { logradouro: string; cidade: string; uf: string }): Promise<number | null> {
+  async calcularKm(e: DestinoEndereco): Promise<number | null> {
     try {
       const origem = await this.obterOrigem();
-      if (!origem) return null;
-      const destino = await this.geocodificar(e.logradouro, e.cidade, e.uf);
+      const destino = await this.geocodificar(e);
       if (!destino) return null;
       return Math.round(DistanciaApi.haversineKm(origem, destino) * 10) / 10;
     } catch (erro) {
-      console.warn('[DistanciaApi] não foi possível calcular a distância:', (erro as Error).message);
+      console.warn('[DistanciaApi] [RF09] não foi possível calcular a distância:', (erro as Error).message);
       return null;
     }
   }
 
-  /** Origem: LOJA_LATITUDE/LOJA_LONGITUDE do .env; se ausentes, geocodifica o LOJA_CEP. */
-  private async obterOrigem(): Promise<Coordenada | null> {
+  /**
+   * [RF09] Distância e duração reais de carro entre a loja e o endereço, usando o OSRM público.
+   * Geocodifica origem e destino com o Nominatim e guarda o resultado em memória por par de coordenadas.
+   * Nunca lança erro de rede: devolve null se não conseguir geocodificar; se o OSRM falhar,
+   * devolve o fallback Haversine com duração estimada por ENTREGA_VELOCIDADE_KMH.
+   */
+  async calcularRota(destino: DestinoEndereco): Promise<RotaCalculada | null> {
+    try {
+      const origem = await this.obterOrigem();
+      const alvo = await this.geocodificar(destino);
+      if (!alvo) return null;
+      return await this.rotaEntre(origem, alvo);
+    } catch (erro) {
+      console.warn('[DistanciaApi] [RF09] não foi possível calcular a rota:', (erro as Error).message);
+      return null;
+    }
+  }
+
+  private async rotaEntre(origem: Coordenada, destino: Coordenada): Promise<RotaCalculada> {
+    const chave =
+      `${origem.latitude.toFixed(5)},${origem.longitude.toFixed(5)};` +
+      `${destino.latitude.toFixed(5)},${destino.longitude.toFixed(5)}`;
+    const emCache = this.cacheRotas.obter(chave);
+    if (emCache) return emCache;
+
+    let resultado: RotaCalculada;
+    try {
+      // OSRM espera longitude,latitude (nessa ordem).
+      const url =
+        `https://router.project-osrm.org/route/v1/driving/` +
+        `${origem.longitude},${origem.latitude};${destino.longitude},${destino.latitude}`;
+      const r = await axios.get<OsrmResposta>(url, {
+        params: { overview: 'false', alternatives: 'false', steps: 'false' },
+        headers: { 'User-Agent': 'PetShopDelivery/1.0 (projeto academico)' },
+        timeout: 8000,
+      });
+      const rota = r.data?.routes?.[0];
+      const metros = Number(rota?.distance);
+      const segundos = Number(rota?.duration);
+      if (!Number.isFinite(metros) || metros <= 0) throw new Error('OSRM não retornou distância.');
+      const km = metros / 1000;
+      resultado = {
+        distanciaKm: Math.round(km * 10) / 10,
+        duracaoMin:
+          Number.isFinite(segundos) && segundos > 0
+            ? Math.max(1, Math.round(segundos / 60))
+            : DistanciaApi.duracaoEstimadaMin(km),
+        origem: 'OSRM',
+      };
+    } catch (erro) {
+      // [RF09] OSRM fora do ar não pode impedir a venda; estimamos pela linha reta (Haversine).
+      console.warn('[DistanciaApi] [RF09] OSRM indisponível, usando estimativa em linha reta:', (erro as Error).message);
+      const km = DistanciaApi.haversineKm(origem, destino);
+      resultado = {
+        distanciaKm: Math.round(km * 10) / 10,
+        duracaoMin: DistanciaApi.duracaoEstimadaMin(km),
+        origem: 'HAVERSINE',
+      };
+    }
+
+    this.cacheRotas.guardar(chave, resultado);
+    return resultado;
+  }
+
+  /** Duração aproximada considerando a velocidade média configurada (ENTREGA_VELOCIDADE_KMH). */
+  private static duracaoEstimadaMin(km: number): number {
+    const configurada = Number(process.env.ENTREGA_VELOCIDADE_KMH);
+    const velocidade = Number.isFinite(configurada) && configurada > 0 ? configurada : 22;
+    return Math.max(1, Math.round((km / velocidade) * 60));
+  }
+
+  /**
+   * [RF09] Origem: LOJA_LATITUDE/LOJA_LONGITUDE do .env; se ausentes, geocodifica o LOJA_CEP;
+   * se ainda ausentes ou inválidos, usa coordenadas padrão da matriz da loja (Campinas/SP).
+   */
+  private async obterOrigem(): Promise<Coordenada> {
     if (this.origem) return this.origem;
 
     const lat = process.env.LOJA_LATITUDE?.trim();
     const lon = process.env.LOJA_LONGITUDE?.trim();
     if (lat && lon) {
       const c = { latitude: Number(lat), longitude: Number(lon) };
-      if (DistanciaApi.coordenadaValida(c)) return (this.origem = c);
-      console.warn('[DistanciaApi] LOJA_LATITUDE/LOJA_LONGITUDE inválidos no .env.');
+      if (DistanciaApi.coordenadaValida(c)) {
+        this.origem = c;
+        return c;
+      }
+      console.warn('[DistanciaApi] [RF09] LOJA_LATITUDE/LOJA_LONGITUDE inválidos no .env.');
     }
 
     const cepLoja = process.env.LOJA_CEP?.replace(/\D/g, '');
-    if (!cepLoja) {
-      console.warn('[DistanciaApi] defina LOJA_CEP (ou LOJA_LATITUDE e LOJA_LONGITUDE) no .env.');
-      return null;
+    if (cepLoja && cepLoja.length === 8) {
+      try {
+        const end = await this.cepApi.consultar(cepLoja);
+        const c = await this.geocodificar({
+          logradouro: end.logradouro,
+          bairro: end.bairro,
+          cidade: end.cidade,
+          uf: end.uf,
+          cep: end.cep,
+        });
+        if (c) {
+          this.origem = c;
+          return c;
+        }
+      } catch (erro) {
+        console.warn('[DistanciaApi] [RF09] falha ao consultar CEP da loja:', (erro as Error).message);
+      }
     }
-    const end = await this.cepApi.consultar(cepLoja);
-    const c = await this.geocodificar(end.logradouro, end.cidade, end.uf);
-    if (c) this.origem = c;
-    return c;
+
+    // [RF09] Fallback padrão para garantir funcionamento mesmo sem .env configurado
+    console.info('[DistanciaApi] [RF09] Utilizando coordenadas padrão da matriz da loja (Campinas/SP).');
+    this.origem = DistanciaApi.ORIGEM_PADRAO;
+    return this.origem;
   }
 
-  /** Tenta rua + cidade; se não achar, cai para o centro da cidade (resultado mais aproximado). */
-  private async geocodificar(logradouro: string, cidade: string, uf: string): Promise<Coordenada | null> {
-    const chave = `${logradouro}|${cidade}|${uf}`.toLowerCase();
+  /**
+   * [RF09] Geocodificação em 4 etapas para maximizar a taxa de sucesso no Nominatim:
+   * 1. Busca estruturada limpa (removendo número de casa e abreviações do logradouro se houver)
+   * 2. Busca livre (q: "${logradouro}${numero ? ' ' + numero : ''}, ${cidade} - ${uf}, Brasil")
+   * 3. Busca por CEP se informado (postalcode: cep.replace(/\D/g, ''))
+   * 4. Fallback centro da cidade (city: cidade, state: uf)
+   */
+  private async geocodificar(destino: DestinoEndereco): Promise<Coordenada | null> {
+    const chave = `${destino.logradouro}|${destino.numero ?? ''}|${destino.bairro ?? ''}|${destino.cidade}|${destino.uf}|${destino.cep ?? ''}`.toLowerCase();
     const emCache = this.cache.obter(chave);
     if (emCache !== undefined) return emCache;
 
     let achou: Coordenada | null = null;
-    if (logradouro) achou = await this.buscar({ street: logradouro, city: cidade, state: uf });
-    if (!achou) achou = await this.buscar({ city: cidade, state: uf });
+
+    // [RF09] 1. Busca estruturada limpa (removendo número de casa do logradouro se houver)
+    const logradouroLimpo = (destino.logradouro ?? '')
+      .replace(/[,\-–]?\s*(?:n[º°.]?\s*)?\d+.*$/i, '')
+      .trim();
+
+    if (logradouroLimpo) {
+      achou = await this.buscar({
+        street: logradouroLimpo,
+        city: destino.cidade,
+        state: destino.uf,
+      });
+    }
+
+    // [RF09] 2. Busca livre ("${logradouro}${numero ? ' ' + numero : ''}, ${cidade} - ${uf}, Brasil")
+    if (!achou && destino.logradouro) {
+      const numTexto = destino.numero && destino.numero.trim() ? ` ${destino.numero.trim()}` : '';
+      const consultaLivre = `${destino.logradouro}${numTexto}, ${destino.cidade} - ${destino.uf}, Brasil`;
+      achou = await this.buscar({ q: consultaLivre });
+    }
+
+    // [RF09] 3. Busca por CEP se informado (postalcode)
+    if (!achou && destino.cep) {
+      const cepLimpo = destino.cep.replace(/\D/g, '');
+      if (cepLimpo.length === 8) {
+        achou = await this.buscar({ postalcode: cepLimpo });
+      }
+    }
+
+    // [RF09] 4. Fallback centro da cidade
+    if (!achou && destino.cidade) {
+      achou = await this.buscar({ city: destino.cidade, state: destino.uf });
+    }
 
     this.cache.guardar(chave, achou);
     return achou;
   }
 
-  private async buscar(consulta: { street?: string; city: string; state: string }): Promise<Coordenada | null> {
-    await this.respeitarLimite();
-    const r = await axios.get<NominatimItem[]>('https://nominatim.openstreetmap.org/search', {
-      params: { ...consulta, country: 'Brazil', format: 'jsonv2', limit: 1 },
-      headers: { 'User-Agent': 'PetShopDelivery/1.0 (projeto academico)', 'Accept-Language': 'pt-BR' },
-      timeout: 8000,
-    });
-    const item = Array.isArray(r.data) ? r.data[0] : undefined;
-    if (!item) return null;
-    const c = { latitude: Number(item.lat), longitude: Number(item.lon) };
-    return DistanciaApi.coordenadaValida(c) ? c : null;
+  private async buscar(consulta: Record<string, string | undefined>): Promise<Coordenada | null> {
+    try {
+      await this.respeitarLimite();
+      const params: Record<string, string> = {
+        format: 'jsonv2',
+        limit: '1',
+        countrycodes: 'br',
+      };
+      for (const [k, v] of Object.entries(consulta)) {
+        if (v && v.trim()) params[k] = v.trim();
+      }
+      const r = await axios.get<NominatimItem[]>('https://nominatim.openstreetmap.org/search', {
+        params,
+        headers: { 'User-Agent': 'PetShopDelivery/1.0 (projeto academico)', 'Accept-Language': 'pt-BR' },
+        timeout: 8000,
+      });
+      const item = Array.isArray(r.data) ? r.data[0] : undefined;
+      if (!item) return null;
+      const c = { latitude: Number(item.lat), longitude: Number(item.lon) };
+      return DistanciaApi.coordenadaValida(c) ? c : null;
+    } catch (erro) {
+      console.warn('[DistanciaApi] [RF09] falha na requisição Nominatim:', (erro as Error).message);
+      return null;
+    }
   }
 
   private respeitarLimite(): Promise<void> {
@@ -311,5 +481,91 @@ export class CotacaoApi {
       fonte: 'Banco Central (PTAX)',
       consultadaEm: new Date().toISOString(),
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// [RF11] API 4: envio de e-mails transacionais via SMTP (nodemailer)
+// ---------------------------------------------------------------------------
+export interface MensagemEmail {
+  para: string;
+  assunto: string;
+  texto: string;
+  html: string;
+}
+
+export interface ResultadoEnvioEmail {
+  enviado: boolean;
+  mensagem: string;
+}
+
+export class EmailApi {
+  private readonly transporte: Transporter;
+  private readonly configurado: boolean;
+  private readonly remetente: string;
+
+  constructor() {
+    const host = process.env.SMTP_HOST?.trim();
+    const portaEnv = Number(process.env.SMTP_PORT);
+    const seguro = (process.env.SMTP_SEGURANCA ?? '').trim().toLowerCase() === 'true';
+    const porta = Number.isFinite(portaEnv) && portaEnv > 0 ? portaEnv : seguro ? 465 : 587;
+    const usuario = process.env.SMTP_USER?.trim();
+    const senha = process.env.SMTP_PASS?.trim() ?? '';
+    const email = process.env.EMAIL_REMETENTE?.trim() || 'no-reply@petshop.local';
+    const nome = process.env.EMAIL_REMETENTE_NOME?.trim() || 'Pet Shop Delivery';
+    this.remetente = `${nome} <${email}>`;
+    this.configurado = Boolean(host);
+
+    // [RF11] Sem SMTP_HOST o envio é simulado no log sem bloquear operações e sem falsos alertas
+    if (!host) {
+      this.transporte = nodemailer.createTransport({ jsonTransport: true });
+      return;
+    }
+
+    // [RF11] Com SMTP_HOST configurado, aplica portas padrão (465 SSL / 587 STARTTLS) e autenticação segura
+    this.transporte = nodemailer.createTransport({
+      host,
+      port: porta,
+      secure: porta === 465 || seguro,
+      auth: usuario ? { user: usuario, pass: senha } : undefined,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+    });
+  }
+
+  /** [RF11] Nunca lança para fora — falha de e-mail jamais derruba a criação do pedido. */
+  async enviar(mensagem: MensagemEmail): Promise<ResultadoEnvioEmail> {
+    try {
+      const info = await this.transporte.sendMail({
+        from: this.remetente,
+        to: mensagem.para,
+        subject: mensagem.assunto,
+        text: mensagem.texto,
+        html: mensagem.html,
+      });
+
+      // [RF11] Em modo simulação (sem SMTP), registra no log e retorna enviado: true com mensagem clara
+      if (!this.configurado) {
+        console.log(
+          `[EmailApi] [RF11] SMTP não configurado. E-mail registrado no log (modo simulação):\n` +
+            `Para: ${mensagem.para}\nAssunto: ${mensagem.assunto}\n${mensagem.texto}`,
+        );
+        return {
+          enviado: true,
+          mensagem: 'E-mail de confirmação gerado e registrado no log (modo simulação).',
+        };
+      }
+
+      const rejeitados = info.rejected;
+      if (Array.isArray(rejeitados) && rejeitados.length > 0) {
+        console.warn('[EmailApi] [RF11] destinatário rejeitado pelo servidor:', rejeitados.join(', '));
+        return { enviado: false, mensagem: 'O servidor de e-mail recusou o destinatário.' };
+      }
+      return { enviado: true, mensagem: 'E-mail de confirmação enviado ao cliente.' };
+    } catch (erro) {
+      console.error('[EmailApi] [RF11] falha ao enviar e-mail:', (erro as Error).message);
+      return { enviado: false, mensagem: 'Não foi possível enviar o e-mail de confirmação.' };
+    }
   }
 }

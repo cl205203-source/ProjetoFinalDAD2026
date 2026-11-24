@@ -29,7 +29,12 @@ import { PedidoController } from './pedidos/pedido.controller';
 import { PedidoRepository } from './pedidos/pedido.repository';
 import { PedidoService } from './pedidos/pedido.service';
 import { CotacaoController } from './cotacao/cotacao.controller';
-import { CepApi, CotacaoApi, DistanciaApi } from './integrations';
+import { CepApi, CotacaoApi, DistanciaApi, EmailApi } from './integrations';
+import { ConfirmacaoPedidoEmailService } from './entregas/confirmacao-email.service';
+import { EntregaController } from './entregas/entrega.controller';
+import { EntregaRepository } from './entregas/entrega.repository';
+import { EntregaService } from './entregas/entrega.service';
+import { TaxaEntregaService } from './entregas/taxa-entrega.service';
 
 async function iniciar() {
   const db = new Database();
@@ -51,9 +56,14 @@ async function iniciar() {
   const clienteRepo = new ClienteRepository(db.pool);
   const entregadorRepo = new EntregadorRepository(db.pool);
   const pedidoRepo = new PedidoRepository(db.pool);
+  const entregaRepo = new EntregaRepository(db.pool);
   const cepApi = new CepApi();
   const distanciaApi = new DistanciaApi(cepApi);
   const cotacaoApi = new CotacaoApi();
+  const emailApi = new EmailApi();
+  // RF09: taxa calculada no main; RF11: confirmação por e-mail após o commit do pedido.
+  const taxaEntrega = new TaxaEntregaService(clienteRepo, distanciaApi);
+  const confirmacaoEmail = new ConfirmacaoPedidoEmailService(clienteRepo, emailApi);
 
   const autenticacao = new AutenticacaoService(usuarioRepo, sessao, hash);
   const usuarios = new UsuarioService(usuarioRepo, sessao, hash);
@@ -61,7 +71,9 @@ async function iniciar() {
   const estoque = new EstoqueService(produtoRepo, movimentacaoRepo, sessao, db);
   const clientes = new ClienteService(clienteRepo, sessao, cepApi, distanciaApi);
   const entregadores = new EntregadorService(entregadorRepo, sessao);
-  const pedidos = new PedidoService(pedidoRepo, estoque, db, sessao);
+  const pedidos = new PedidoService(pedidoRepo, estoque, db, sessao, taxaEntrega, confirmacaoEmail, entregadorRepo);
+  // RF10: central de entregas (painel, vínculo e ciclo de vida).
+  const entregas = new EntregaService(entregaRepo, pedidoRepo, entregadorRepo, pedidos, taxaEntrega, sessao, db);
 
   if (erroBanco === null) {
     try {
@@ -79,6 +91,7 @@ async function iniciar() {
   new ClienteController(clientes).registrar();
   new EntregadorController(entregadores).registrar();
   new PedidoController(pedidos).registrar();
+  new EntregaController(entregas).registrar();
   new CotacaoController(cotacaoApi).registrar();
   ipcMain.handle('db:status', () => ({ ok: erroBanco === null, erro: erroBanco }));
 

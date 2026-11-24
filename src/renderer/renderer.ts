@@ -1,10 +1,10 @@
 // Casca da interface: login, navegação por abas e ligação entre as telas.
 // Só conversa com o main via window.api (preload).
 
-type Aba = 'produtos' | 'estoque' | 'clientes' | 'entregadores' | 'pedidos' | 'usuarios';
+type Aba = 'produtos' | 'estoque' | 'clientes' | 'entregadores' | 'pedidos' | 'entregas' | 'usuarios';
 
 class App {
-  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'clientes', 'entregadores', 'pedidos', 'usuarios'];
+  private static readonly ABAS: Aba[] = ['produtos', 'estoque', 'clientes', 'entregadores', 'pedidos', 'entregas', 'usuarios'];
 
   private usuarioAtual: UsuarioDTO | null = null;
 
@@ -14,6 +14,7 @@ class App {
   private readonly clientes = new ClientesTela();
   private readonly entregadores = new EntregadoresTela();
   private readonly pedidos = new PedidosTela();
+  private readonly entregas = new EntregasTela();
 
   constructor() {
     Dom.pegar<HTMLFormElement>('form-login').addEventListener('submit', (e) => void this.aoLogar(e));
@@ -71,6 +72,7 @@ class App {
     this.clientes.limpar();
     this.entregadores.limpar();
     this.pedidos.limpar();
+    this.entregas.limpar();
     Aviso.limpar();
     Dom.pegar('tela-app').classList.add('d-none');
     Dom.pegar('tela-login').classList.remove('d-none');
@@ -104,6 +106,8 @@ class App {
     const u = this.usuarioAtual;
     if (!u) return;
     Aviso.limpar();
+    // RF10: o polling da central de entregas só roda enquanto a aba está aberta.
+    this.entregas.parar();
     this.usuarios.fecharForm();
     this.produtos.fecharForm();
     this.clientes.fecharForm();
@@ -122,6 +126,7 @@ class App {
     if (aba === 'clientes') await this.clientes.ativar(u);
     if (aba === 'entregadores') await this.entregadores.ativar(u);
     if (aba === 'pedidos') await this.pedidos.ativar(u);
+    if (aba === 'entregas') await this.entregas.ativar(u);
     if (aba === 'usuarios' && u.perfil === 'ADMIN') await this.usuarios.ativar(u);
   }
 

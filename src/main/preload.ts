@@ -7,6 +7,7 @@ import type { EnderecoConsultado } from './clientes/cliente.service';
 import type { EntregadorPublico, StatusEntregador } from './entregadores/entregador.model';
 import type { CategoriaProduto, ProdutoPublico } from './produtos/produto.model';
 import type { PedidoPublico, StatusPedido } from './pedidos/pedido.model';
+import type { PainelEntregasPublico, TaxaEntregaPublica } from './entregas/entrega.model';
 import type { CotacaoDolar } from './integrations';
 import type { PerfilUsuario, UsuarioPublico } from './usuarios/usuario.model';
 
@@ -130,6 +131,15 @@ contextBridge.exposeInMainWorld('api', {
     chamar<PedidoPublico>('pedidos:alterarStatus', id, d),
   cancelarPedido: (id: number, d: { observacao?: string | null }) => chamar<PedidoPublico>('pedidos:cancelar', id, d),
   excluirPedido: (id: number) => chamar<void>('pedidos:excluir', id),
+
+  // Entregas (RF09/RF10): taxa calculada no main e central de entregas
+  calcularTaxaEntrega: (d: { clienteId: number; valorItens?: number }) =>
+    chamar<TaxaEntregaPublica>('entregas:calcularTaxa', d),
+  painelEntregas: () => chamar<PainelEntregasPublico>('entregas:painel'),
+  vincularEntregador: (d: { pedidoId: number; entregadorId: number }) =>
+    chamar<PedidoPublico>('entregas:vincular', d),
+  alterarStatusEntrega: (d: { pedidoId: number; statusPedido: StatusPedido }) =>
+    chamar<PedidoPublico>('entregas:alterarStatus', d),
 
   // Cotação do dólar (RF12)
   consultarCotacaoDolar: () => chamar<CotacaoDolar>('cotacao:dolar'),
