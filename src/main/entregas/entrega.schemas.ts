@@ -26,6 +26,6 @@ export class EsquemasEntrega {
   /** RF10: mudança de status pelo ciclo de vida da entrega. */
   static readonly alterarStatus = z.object({
     pedidoId: idSchema,
-    statusPedido: z.enum(STATUS_PEDIDO, { errorMap: () => ({ message: 'Status de pedido inválido.' }) }),
+    statusPedido: z.enum(STATUS_PEDIDO, { error: 'Status de pedido inválido.' }),
   });
 }

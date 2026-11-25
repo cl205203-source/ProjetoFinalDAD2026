@@ -37,7 +37,7 @@ export class EsquemasCliente {
       busca: z.string().trim().max(100).optional(),
       status: z.enum(['ATIVOS', 'INATIVOS', 'TODOS']).default('TODOS'),
     })
-    .default({});
+    .prefault({});
 
   /** Entrada de clientes:consultarCep. */
   static readonly cep = cepSchema;

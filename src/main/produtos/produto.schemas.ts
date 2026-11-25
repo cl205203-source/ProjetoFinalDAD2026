@@ -26,7 +26,7 @@ export class EsquemasProduto {
       .min(2, 'O nome deve ter no mínimo 2 caracteres.')
       .max(150, 'O nome deve ter no máximo 150 caracteres.'),
     descricao: textoOpcional(2000, 'Descrição'),
-    categoria: z.enum(CATEGORIAS, { errorMap: () => ({ message: 'Categoria inválida.' }) }),
+    categoria: z.enum(CATEGORIAS, { error: 'Categoria inválida.' }),
     marca: z
       .string(obrigatorio('Marca'))
       .trim()
@@ -34,7 +34,9 @@ export class EsquemasProduto {
       .max(80, 'A marca deve ter no máximo 80 caracteres.'),
     precoCusto: dinheiroSchema('Preço de custo'),
     precoVenda: dinheiroSchema('Preço de venda'),
-    isImportado: z.boolean({ required_error: 'Informe a origem.', invalid_type_error: 'Origem inválida.' }),
+    isImportado: z.boolean({
+      error: (iss) => (iss.input === undefined ? 'Informe a origem.' : 'Origem inválida.'),
+    }),
     estoqueAtual: inteiroSchema('Estoque inicial'),
     estoqueMinimo: inteiroSchema('Estoque mínimo'),
   });
@@ -49,5 +51,5 @@ export class EsquemasProduto {
       status: z.enum(['ATIVOS', 'INATIVOS', 'TODOS']).default('TODOS'),
       somenteEstoqueBaixo: z.boolean().default(false),
     })
-    .default({});
+    .prefault({});
 }

@@ -4,11 +4,11 @@ import { cpfSchema, telefoneSchema } from '../compartilhado/campos-br';
 import { obrigatorio } from '../compartilhado/validacao';
 import { STATUS_ENTREGADOR } from './entregador.model';
 
-const statusSchema = z.enum(STATUS_ENTREGADOR, { errorMap: () => ({ message: 'Status de disponibilidade inválido.' }) });
+const statusSchema = z.enum(STATUS_ENTREGADOR, { error: 'Status de disponibilidade inválido.' });
 
 /** Placa opcional (bicicleta não tem). Aceita ABC1D23 (Mercosul) e ABC-1234 (antiga). */
 const placaSchema = z
-  .string({ invalid_type_error: 'Placa inválida.' })
+  .string({ error: 'Placa inválida.' })
   .nullish()
   .transform((v) => (v ? v.trim().toUpperCase().replace(/[-\s]/g, '') : null))
   .refine((v) => v === null || /^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(v), 'Placa inválida. Use o formato ABC1D23 ou ABC-1234.');
@@ -41,5 +41,5 @@ export class EsquemasEntregador {
       disponibilidade: statusSchema.optional(),
       status: z.enum(['ATIVOS', 'INATIVOS', 'TODOS']).default('TODOS'),
     })
-    .default({});
+    .prefault({});
 }
