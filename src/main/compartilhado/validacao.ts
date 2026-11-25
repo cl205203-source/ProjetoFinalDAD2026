@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { AppError } from './erros';
 
 export const obrigatorio = (campo: string) => ({
-  required_error: `${campo} é obrigatório.`,
-  invalid_type_error: `${campo} inválido.`,
+  error: (iss: { input?: unknown }) =>
+    iss.input === undefined ? `${campo} é obrigatório.` : `${campo} inválido.`,
 });
 
 /** Identificador numérico (chave primária) vindo da interface. */
@@ -15,7 +15,7 @@ export const idSchema = z
 
 export const textoOpcional = (max: number, campo: string) =>
   z
-    .string({ invalid_type_error: `${campo} inválido.` })
+    .string({ error: `${campo} inválido.` })
     .trim()
     .max(max, `${campo} deve ter no máximo ${max} caracteres.`)
     .nullish()

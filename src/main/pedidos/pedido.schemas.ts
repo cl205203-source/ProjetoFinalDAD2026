@@ -23,7 +23,7 @@ const distanciaSchema = z
   .nonnegative('A distância não pode ser negativa.')
   .max(100_000, 'Distância inválida.');
 
-const statusSchema = z.enum(STATUS_PEDIDO, { errorMap: () => ({ message: 'Status de pedido inválido.' }) });
+const statusSchema = z.enum(STATUS_PEDIDO, { error: 'Status de pedido inválido.' });
 
 /** Item enviado pela tela: quantidade por produto (o preço é buscado no banco, nunca confiado no renderer). */
 export const itemPedidoSchema = z.object({

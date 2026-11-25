@@ -13,7 +13,7 @@ export class EsquemasEstoque {
   static readonly movimentacao = z
     .object({
       produtoId: idSchema,
-      tipo: z.enum(TIPOS_MANUAIS, { errorMap: () => ({ message: 'Tipo de movimentação inválido.' }) }),
+      tipo: z.enum(TIPOS_MANUAIS, { error: 'Tipo de movimentação inválido.' }),
       quantidade: quantidadeSchema,
       observacao: textoOpcional(255, 'Observação'),
     })
@@ -32,7 +32,7 @@ export class EsquemasEstoque {
       produtoId: idSchema.optional(),
       limite: z.number().int().min(1).max(500).default(100),
     })
-    .default({});
+    .prefault({});
 
   static readonly itens = z.array(z.object({ produtoId: idSchema, quantidade: quantidadeSchema }));
 

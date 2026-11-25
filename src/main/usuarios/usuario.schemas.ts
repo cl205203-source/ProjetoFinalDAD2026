@@ -24,7 +24,7 @@ const senhaSchema = z
   .regex(/[A-Za-z]/, 'A senha deve conter ao menos uma letra.')
   .regex(/\d/, 'A senha deve conter ao menos um número.');
 
-const perfilSchema = z.enum(PERFIS, { errorMap: () => ({ message: 'Perfil inválido.' }) });
+const perfilSchema = z.enum(PERFIS, { error: 'Perfil inválido.' });
 
 export class EsquemasUsuario {
   static readonly id = idSchema;

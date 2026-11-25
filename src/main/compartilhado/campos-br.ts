@@ -48,4 +48,4 @@ export const cepSchema = z
   .transform(CamposBr.somenteDigitos)
   .refine((v) => v.length === 8, 'CEP inválido. Informe 8 dígitos.');
 
-export const ufSchema = z.enum(UFS, { errorMap: () => ({ message: 'UF inválida.' }) });
+export const ufSchema = z.enum(UFS, { error: 'UF inválida.' });
