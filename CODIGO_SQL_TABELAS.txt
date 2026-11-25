@@ -1,0 +1,139 @@
+
+-- 1) USUÁRIOS --------------------------------------------------
+CREATE TABLE usuarios (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nome        VARCHAR(120) NOT NULL,
+  email       VARCHAR(150) NOT NULL,
+  senha_hash  VARCHAR(255) NOT NULL,              -- bcrypt, nunca texto puro
+  perfil      ENUM('ADMIN','ATENDENTE') NOT NULL DEFAULT 'ATENDENTE',
+  ativo       TINYINT(1) NOT NULL DEFAULT 1,      -- soft delete
+  criado_em   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_usuarios_email (email)
+) ENGINE=InnoDB;
+
+-- 2) CLIENTES --------------------------------------------------
+CREATE TABLE clientes (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nome         VARCHAR(150) NOT NULL,
+  cpf          VARCHAR(14)  NOT NULL,
+  telefone     VARCHAR(20)  NOT NULL,
+  email        VARCHAR(150) NOT NULL,
+  cep          CHAR(8)      NOT NULL,
+  logradouro   VARCHAR(150) NOT NULL,
+  numero       VARCHAR(10)  NOT NULL,
+  complemento  VARCHAR(100) NULL,
+  bairro       VARCHAR(100) NOT NULL,
+  cidade       VARCHAR(100) NOT NULL,
+  uf           CHAR(2)      NOT NULL,
+  distancia_km DECIMAL(8,2) NULL,                 -- calculada via API de rotas
+  ativo        TINYINT(1) NOT NULL DEFAULT 1,
+  criado_em    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_clientes_cpf (cpf),
+  KEY idx_clientes_nome (nome),
+  CONSTRAINT ck_clientes_distancia CHECK (distancia_km IS NULL OR distancia_km >= 0)
+) ENGINE=InnoDB;
+
+-- 3) ENTREGADORES ----------------------------------------------
+CREATE TABLE entregadores (
+  id        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nome      VARCHAR(120) NOT NULL,
+  cpf       VARCHAR(14)  NOT NULL,
+  telefone  VARCHAR(20)  NOT NULL,
+  veiculo   VARCHAR(60)  NOT NULL,
+  placa     VARCHAR(10)  NOT NULL,
+  status    ENUM('DISPONIVEL','EM_ROTA','INDISPONIVEL') NOT NULL DEFAULT 'DISPONIVEL',
+  ativo     TINYINT(1) NOT NULL DEFAULT 1,
+  criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_entregadores_cpf (cpf),
+  KEY idx_entregadores_status (status)
+) ENGINE=InnoDB;
+
+-- 4) PRODUTOS --------------------------------------------------
+CREATE TABLE produtos (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nome           VARCHAR(150) NOT NULL,
+  descricao      TEXT NULL,
+  categoria      ENUM('RACAO','BRINQUEDO','ACESSORIO','HIGIENE','SAUDE','OUTROS') NOT NULL,
+  marca          VARCHAR(80)  NOT NULL,
+  preco_custo    DECIMAL(10,2) NOT NULL,
+  preco_venda    DECIMAL(10,2) NOT NULL,
+  is_importado   TINYINT(1) NOT NULL DEFAULT 0,   -- RN03: usa cotação do dólar
+  estoque_atual  INT NOT NULL DEFAULT 0,
+  estoque_minimo INT NOT NULL DEFAULT 0,
+  ativo          TINYINT(1) NOT NULL DEFAULT 1,
+  criado_em      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_produtos_categoria (categoria),
+  KEY idx_produtos_nome (nome),
+  CONSTRAINT ck_produtos_precos   CHECK (preco_custo >= 0 AND preco_venda >= 0),
+  CONSTRAINT ck_produtos_estoque  CHECK (estoque_atual >= 0 AND estoque_minimo >= 0)
+) ENGINE=InnoDB;
+
+-- 5) PEDIDOS ---------------------------------------------------
+CREATE TABLE pedidos (
+  id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  cliente_id       INT UNSIGNED NOT NULL,
+  entregador_id    INT UNSIGNED NULL,             -- RN02: obrigatório p/ "Saiu para Entrega" (validar no service)
+  usuario_id       INT UNSIGNED NOT NULL,
+  data_pedido      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status_pedido    ENUM('PENDENTE','EM_SEPARACAO','SAIU_PARA_ENTREGA','ENTREGUE','CANCELADO')
+                   NOT NULL DEFAULT 'PENDENTE',
+  distancia_km     DECIMAL(8,2)  NOT NULL DEFAULT 0,
+  valor_frete      DECIMAL(10,2) NOT NULL DEFAULT 0,
+  valor_total      DECIMAL(10,2) NOT NULL DEFAULT 0,
+  previsao_entrega DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_pedidos_status  (status_pedido),
+  KEY idx_pedidos_data    (data_pedido),
+  CONSTRAINT fk_pedidos_cliente
+    FOREIGN KEY (cliente_id)    REFERENCES clientes(id)     ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_pedidos_entregador
+    FOREIGN KEY (entregador_id) REFERENCES entregadores(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_pedidos_usuario
+    FOREIGN KEY (usuario_id)    REFERENCES usuarios(id)     ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT ck_pedidos_valores CHECK (distancia_km >= 0 AND valor_frete >= 0 AND valor_total >= 0)
+) ENGINE=InnoDB;
+
+-- 6) ITENS DO PEDIDO -------------------------------------------
+CREATE TABLE itens_pedido (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  pedido_id      INT UNSIGNED NOT NULL,
+  produto_id     INT UNSIGNED NOT NULL,
+  quantidade     INT NOT NULL,
+  preco_unitario DECIMAL(10,2) NOT NULL,          -- preço aplicado no momento da venda
+  subtotal       DECIMAL(10,2) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_item_pedido_produto (pedido_id, produto_id),
+  KEY idx_itens_produto (produto_id),
+  CONSTRAINT fk_itens_pedido
+    FOREIGN KEY (pedido_id)  REFERENCES pedidos(id)  ON DELETE CASCADE  ON UPDATE CASCADE,
+  CONSTRAINT fk_itens_produto
+    FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT ck_itens_valores CHECK (quantidade > 0 AND preco_unitario >= 0 AND subtotal >= 0)
+) ENGINE=InnoDB;
+
+-- 7) MOVIMENTAÇÕES DE ESTOQUE ----------------------------------
+CREATE TABLE movimentacoes_estoque (
+  id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  produto_id        INT UNSIGNED NOT NULL,
+  pedido_id         INT UNSIGNED NULL,            -- preenchido em saídas/estornos de pedido
+  usuario_id        INT UNSIGNED NULL,            -- quem registrou (entradas/ajustes manuais)
+  tipo              ENUM('ENTRADA','SAIDA','AJUSTE_POSITIVO','AJUSTE_NEGATIVO','ESTORNO') NOT NULL,
+  quantidade        INT NOT NULL,
+  data_movimentacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  observacao        VARCHAR(255) NULL,
+  PRIMARY KEY (id),
+  KEY idx_mov_produto (produto_id),
+  KEY idx_mov_pedido  (pedido_id),
+  KEY idx_mov_data    (data_movimentacao),
+  CONSTRAINT fk_mov_produto
+    FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_mov_pedido
+    FOREIGN KEY (pedido_id)  REFERENCES pedidos(id)  ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_mov_usuario
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT ck_mov_quantidade CHECK (quantidade > 0)
+) ENGINE=InnoDB;
