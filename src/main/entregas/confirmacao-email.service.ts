@@ -2,20 +2,63 @@
 // Executado após o commit da transação sem bloquear ou cancelar o pedido em caso de falha de envio ou SMTP não configurado.
 import { ClienteRepository } from '../clientes/cliente.repository';
 import { EmailApi } from '../integrations';
-import { PedidoPublico, ResultadoEmailConfirmacao } from '../pedidos/pedido.model';
+import { PedidoPublico, ResultadoEmailConfirmacao, StatusPedido } from '../pedidos/pedido.model';
 
 export class ConfirmacaoPedidoEmailService {
+  /** [RF11] Texto, rótulo e cor do e-mail de acordo com o status atual do pedido. */
+  private static readonly STATUS_EMAIL: Record<
+    StatusPedido,
+    { titulo: string; rotulo: string; intro: string; subtitulo: string; cor: string }
+  > = {
+    PENDENTE: {
+      titulo: 'recebido',
+      rotulo: 'Pendente',
+      intro: 'Recebemos seu pedido e já estamos preparando tudo para o seu pet.',
+      subtitulo: 'Obrigado por comprar no Pet Shop Delivery!',
+      cor: '#198754',
+    },
+    EM_SEPARACAO: {
+      titulo: 'em separação',
+      rotulo: 'Em separação',
+      intro: 'Seu pedido está sendo separado pela nossa equipe.',
+      subtitulo: 'Obrigado por comprar no Pet Shop Delivery!',
+      cor: '#0d6efd',
+    },
+    SAIU_PARA_ENTREGA: {
+      titulo: 'saiu para entrega',
+      rotulo: 'Saiu para entrega',
+      intro: 'Seu pedido saiu para entrega e está a caminho.',
+      subtitulo: 'Obrigado por comprar no Pet Shop Delivery!',
+      cor: '#fd7e14',
+    },
+    ENTREGUE: {
+      titulo: 'entregue',
+      rotulo: 'Entregue',
+      intro: 'Seu pedido foi entregue. Obrigado por comprar no Pet Shop Delivery!',
+      subtitulo: 'Pedido concluído com sucesso!',
+      cor: '#198754',
+    },
+    CANCELADO: {
+      titulo: 'cancelado',
+      rotulo: 'Cancelado',
+      intro: 'Seu pedido foi cancelado. Se precisar de ajuda, fale com a nossa loja.',
+      subtitulo: 'Pedido cancelado',
+      cor: '#dc3545',
+    },
+  };
+
   constructor(
     private readonly clientes: ClienteRepository,
     private readonly emailApi: EmailApi,
   ) {}
 
   /**
-   * [RF11] Monta o resumo detalhado do pedido e dispara o e-mail de confirmação ao cliente.
+   * [RF11] Monta o resumo detalhado do pedido e dispara o e-mail ao cliente com o status atual
+   * (recebido, em separação, saiu para entrega, entregue ou cancelado).
    * Contém: resumo dos itens, valores (subtotal, taxa de entrega/frete, total), endereço completo e previsão de entrega.
    * Nunca lança exceção: falhas de envio retornam um status descritivo sem afetar a persistência do pedido.
-   * Quando em modo simulação (sem SMTP_HOST configurado), o serviço de e-mail registra em log e retorna
-   * enviado: true com mensagem amigável para não disparar falso alerta de erro na interface.
+   * Quando em modo simulação (sem SMTP_HOST configurado), o serviço de e-mail grava o HTML
+   * na pasta local ./emails e retorna enviado: true com mensagem amigável para não disparar falso alerta de erro na interface.
    */
   async enviar(pedido: PedidoPublico): Promise<ResultadoEmailConfirmacao> {
     try {
@@ -35,6 +78,9 @@ export class ConfirmacaoPedidoEmailService {
         : 'A confirmar';
       const entregadorTexto = pedido.entregadorNome ?? 'Ainda não definido';
       const endereco = ConfirmacaoPedidoEmailService.formatarEndereco(cliente);
+      const status = ConfirmacaoPedidoEmailService.STATUS_EMAIL[pedido.statusPedido];
+      const titulo = `Pedido #${pedido.id} ${status.titulo}`;
+      const assunto = `${titulo} - Pet Shop Delivery`;
 
       // [RF11] Tabela HTML com resumo dos produtos
       const linhasHtml = pedido.itens
@@ -53,13 +99,13 @@ export class ConfirmacaoPedidoEmailService {
 <html lang="pt-BR">
 <body style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#111827;">
   <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-    <div style="padding:20px 24px;background:#198754;color:#ffffff;">
-      <h1 style="margin:0;font-size:20px;">Pedido #${pedido.id} confirmado</h1>
-      <p style="margin:6px 0 0;font-size:14px;">Obrigado por comprar no Pet Shop Delivery!</p>
+    <div style="padding:20px 24px;background:${status.cor};color:#ffffff;">
+      <h1 style="margin:0;font-size:20px;">${titulo}</h1>
+      <p style="margin:6px 0 0;font-size:14px;">${status.subtitulo}</p>
     </div>
     <div style="padding:24px;">
       <p style="margin:0 0 12px;">Olá, <strong>${ConfirmacaoPedidoEmailService.escaparHtml(cliente.nome)}</strong>!</p>
-      <p style="margin:0 0 16px;font-size:14px;">Recebemos seu pedido e já estamos preparando tudo para o seu pet.</p>
+      <p style="margin:0 0 16px;font-size:14px;">${status.intro}</p>
 
       <table style="width:100%;border-collapse:collapse;font-size:14px;">
         <thead>
@@ -87,6 +133,8 @@ export class ConfirmacaoPedidoEmailService {
       </table>
 
       <div style="margin-top:20px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:14px;">
+        <p style="margin:0 0 6px;"><strong>Status do pedido</strong></p>
+        <p style="margin:0 0 12px;">${status.rotulo}</p>
         <p style="margin:0 0 6px;"><strong>Endereço de entrega</strong></p>
         <p style="margin:0 0 12px;">${ConfirmacaoPedidoEmailService.escaparHtml(endereco)}</p>
         <p style="margin:0 0 6px;"><strong>Previsão de entrega</strong></p>
@@ -103,10 +151,10 @@ export class ConfirmacaoPedidoEmailService {
 
       // [RF11] Versão em texto simples para clientes de e-mail sem suporte a HTML
       const texto = [
-        `Pedido #${pedido.id} confirmado - Pet Shop Delivery`,
+        `${titulo} - Pet Shop Delivery`,
         '',
         `Olá, ${cliente.nome}!`,
-        'Recebemos seu pedido:',
+        status.intro,
         '',
         ...pedido.itens.map((item) => `- ${item.quantidade}x ${item.produtoNome}: ${ConfirmacaoPedidoEmailService.moeda(item.subtotal)}`),
         '',
@@ -114,6 +162,7 @@ export class ConfirmacaoPedidoEmailService {
         `Frete: ${freteTexto}`,
         `Total: ${ConfirmacaoPedidoEmailService.moeda(pedido.valorTotal)}`,
         '',
+        `Status do pedido: ${status.rotulo}`,
         `Endereço de entrega: ${endereco}`,
         `Previsão de entrega: ${previsaoTexto}`,
         `Entregador: ${entregadorTexto}`,
@@ -123,7 +172,7 @@ export class ConfirmacaoPedidoEmailService {
 
       return await this.emailApi.enviar({
         para,
-        assunto: `Pedido #${pedido.id} confirmado - Pet Shop Delivery`,
+        assunto,
         texto,
         html,
       });

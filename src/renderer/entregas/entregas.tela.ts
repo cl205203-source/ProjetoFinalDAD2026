@@ -336,7 +336,13 @@ class EntregasTela implements Tela {
       await this.carregar();
       return;
     }
-    Aviso.mostrar(`Pedido #${entrega.pedidoId}: ${EntregasTela.PEDIDO[status].rotulo}.`, 'success');
+    // [RF11] Informa o resultado do e-mail disparado pela mudança de status
+    const email = r.dados.emailConfirmacao;
+    const base = `Pedido #${entrega.pedidoId}: ${EntregasTela.PEDIDO[status].rotulo}.`;
+    Aviso.mostrar(
+      email ? `${base} E-mail: ${email.mensagem}` : base,
+      email && !email.enviado ? 'danger' : 'success',
+    );
     await this.carregar();
   }
 

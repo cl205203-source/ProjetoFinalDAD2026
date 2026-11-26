@@ -193,7 +193,13 @@ class PedidosTela implements Tela {
       await this.carregar();
       return;
     }
-    Aviso.mostrar('Status do pedido atualizado.', 'success');
+    // [RF11] Informa também o resultado do e-mail disparado pela mudança de status
+    const email = r.dados.emailConfirmacao;
+    const base = 'Status do pedido atualizado.';
+    Aviso.mostrar(
+      email ? `${base} E-mail: ${email.mensagem}` : base,
+      email && !email.enviado ? 'danger' : 'success',
+    );
     await this.carregar();
   }
 

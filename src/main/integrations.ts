@@ -1,7 +1,9 @@
 // Integrações com APIs externas: CepApi, DistanciaApi, CotacaoApi, EmailApi
 // Todas rodam no processo main (o renderer não tem acesso à rede por causa da CSP).
 import axios from 'axios';
+import { mkdir, writeFile } from 'fs/promises';
 import nodemailer, { Transporter } from 'nodemailer';
+import path from 'path';
 import { AppError } from './compartilhado/erros';
 
 /** Endereço devolvido pela consulta de CEP. */
@@ -500,6 +502,8 @@ export interface ResultadoEnvioEmail {
 }
 
 export class EmailApi {
+  // [RF11] Modo simulação: em vez de logar o conteúdo, grava o HTML em ./emails (raiz do projeto).
+  private static readonly PASTA_EMAILS = path.join(__dirname, '..', '..', 'emails');
   private readonly transporte: Transporter;
   private readonly configurado: boolean;
   private readonly remetente: string;
@@ -516,7 +520,7 @@ export class EmailApi {
     this.remetente = `${nome} <${email}>`;
     this.configurado = Boolean(host);
 
-    // [RF11] Sem SMTP_HOST o envio é simulado no log sem bloquear operações e sem falsos alertas
+    // [RF11] Sem SMTP_HOST o envio é simulado salvando o HTML na pasta emails
     if (!host) {
       this.transporte = nodemailer.createTransport({ jsonTransport: true });
       return;
@@ -545,16 +549,20 @@ export class EmailApi {
         html: mensagem.html,
       });
 
-      // [RF11] Em modo simulação (sem SMTP), registra no log e retorna enviado: true com mensagem clara
+      // [RF11] Em modo simulação (sem SMTP), grava o HTML na pasta local emails e retorna enviado: true
       if (!this.configurado) {
-        console.log(
-          `[EmailApi] [RF11] SMTP não configurado. E-mail registrado no log (modo simulação):\n` +
-            `Para: ${mensagem.para}\nAssunto: ${mensagem.assunto}\n${mensagem.texto}`,
-        );
-        return {
-          enviado: true,
-          mensagem: 'E-mail de confirmação gerado e registrado no log (modo simulação).',
-        };
+        try {
+          const arquivo = await this.salvarHtml(mensagem);
+          const relativo = path.relative(path.join(__dirname, '..', '..'), arquivo);
+          console.log(`[EmailApi] [RF11] SMTP não configurado. E-mail salvo em "${relativo}" (modo simulação).`);
+          return {
+            enviado: true,
+            mensagem: `E-mail de confirmação salvo em "${relativo}" (modo simulação).`,
+          };
+        } catch (erro) {
+          console.error('[EmailApi] [RF11] falha ao salvar e-mail na pasta emails:', (erro as Error).message);
+          return { enviado: false, mensagem: 'Não foi possível salvar o e-mail de confirmação na pasta emails.' };
+        }
       }
 
       const rejeitados = info.rejected;
@@ -567,5 +575,20 @@ export class EmailApi {
       console.error('[EmailApi] [RF11] falha ao enviar e-mail:', (erro as Error).message);
       return { enviado: false, mensagem: 'Não foi possível enviar o e-mail de confirmação.' };
     }
+  }
+
+  /** [RF11] Grava o HTML do e-mail em ./emails e devolve o caminho absoluto do arquivo. */
+  private async salvarHtml(mensagem: MensagemEmail): Promise<string> {
+    await mkdir(EmailApi.PASTA_EMAILS, { recursive: true });
+    const arquivo = path.join(EmailApi.PASTA_EMAILS, EmailApi.nomeArquivo(mensagem));
+    await writeFile(arquivo, mensagem.html, 'utf8');
+    return arquivo;
+  }
+
+  /** [RF11] Nome seguro para o sistema de arquivos: carimbo de data/hora + destinatário. */
+  private static nomeArquivo(mensagem: MensagemEmail): string {
+    const carimbo = new Date().toISOString().replace(/[:.]/g, '-');
+    const destinatario = mensagem.para.replace(/[^a-zA-Z0-9._@-]/g, '_').slice(0, 80) || 'destinatario';
+    return `${carimbo}_${destinatario}.html`;
   }
 }

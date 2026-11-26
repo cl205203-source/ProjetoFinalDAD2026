@@ -115,9 +115,11 @@ export class PedidoService {
     const valorFrete = calculo.taxaEntrega ?? dados.valorFrete;
     const previsaoEntrega = new Date(calculo.previsaoEntrega);
 
+    let statusAlterado = false;
     await this.db.transacao(async (conn) => {
       const atual = await this.obterOuFalhar(id, conn);
       this.garantirEditavel(atual);
+      statusAlterado = atual.status !== dados.statusPedido;
 
       await this.garantirCliente(dados.clienteId, conn);
       if (dados.entregadorId !== null && dados.entregadorId !== atual.entregadorId) {
@@ -149,7 +151,10 @@ export class PedidoService {
       }
     });
 
-    return (await this.obterOuFalhar(id)).paraPublico();
+    const publico = (await this.obterOuFalhar(id)).paraPublico();
+    // [RF11] Atualização que muda o status também dispara o e-mail ao cliente.
+    if (!statusAlterado) return publico;
+    return { ...publico, emailConfirmacao: await this.enviarEmailComSeguranca(publico) };
   }
 
   /** [RF08][RF10] Muda o status do pedido no ciclo de vida (RN02: "Saiu para Entrega" exige entregador). */
@@ -163,9 +168,11 @@ export class PedidoService {
       return this.cancelar(id, { observacao: null });
     }
 
+    let statusAlterado = false;
     await this.db.transacao(async (conn) => {
       const atual = await this.obterOuFalhar(id, conn);
       this.garantirEditavel(atual);
+      statusAlterado = atual.status !== statusPedido;
 
       const entregadorFinal = entregadorId ?? atual.entregadorId;
       if (statusPedido === 'SAIU_PARA_ENTREGA' && entregadorFinal === null) {
@@ -192,7 +199,10 @@ export class PedidoService {
       }
     });
 
-    return (await this.obterOuFalhar(id)).paraPublico();
+    const publico = (await this.obterOuFalhar(id)).paraPublico();
+    // [RF11] Toda mudança de status (incluindo "Entregue") gera o e-mail ao cliente.
+    if (!statusAlterado) return publico;
+    return { ...publico, emailConfirmacao: await this.enviarEmailComSeguranca(publico) };
   }
 
   /** [RF08][RF03][RF10] Cancela o pedido, devolve ao estoque e libera o entregador para DISPONIVEL. */
@@ -201,6 +211,7 @@ export class PedidoService {
     const id = Validador.parse(idSchema, idEntrada);
     Validador.parse(EsquemasPedido.cancelar, entrada);
 
+    let cancelou = false;
     await this.db.transacao(async (conn) => {
       const atual = await this.obterOuFalhar(id, conn);
       if (atual.estaCancelado()) return;
@@ -208,6 +219,7 @@ export class PedidoService {
 
       await this.estoque.estornarPedido(conn, id);
       await this.pedidos.definirStatus(id, 'CANCELADO', atual.entregadorId, conn);
+      cancelou = true;
 
       // [RF10] Se não houver outra entrega em rota, o entregador volta a ficar DISPONIVEL.
       if (atual.entregadorId !== null) {
@@ -215,7 +227,10 @@ export class PedidoService {
       }
     });
 
-    return (await this.obterOuFalhar(id)).paraPublico();
+    const publico = (await this.obterOuFalhar(id)).paraPublico();
+    // [RF11] O cancelamento também é uma mudança de status: envia o e-mail com o novo status.
+    if (!cancelou) return publico;
+    return { ...publico, emailConfirmacao: await this.enviarEmailComSeguranca(publico) };
   }
 
   /** RN04: exclusão física permitida somente para pedidos cancelados (histórico preservado). */

@@ -42,7 +42,7 @@ export interface PedidoPublico {
   /** RF09: previsão calculada no main (ISO); null quando não foi possível calcular. */
   previsaoEntrega: string | null;
   itens: ItemPedidoPublico[];
-  /** RF11: presente somente no retorno de criação do pedido. */
+  /** RF11: presente quando um e-mail de confirmação/atualização é disparado (criação ou mudança de status). */
   emailConfirmacao?: ResultadoEmailConfirmacao;
 }
 
